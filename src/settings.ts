@@ -30,9 +30,96 @@ export const SETTINGS = {
     driftMaxDistance: 76,
   },
   scoring: {
-    hit: 1,
+    hit: 10,
     streakBonusEvery: 5,
   },
 };
+
+export const LEVELS = [
+  {
+    id: "easy",
+    label: "Easy",
+    orbitPeriodSeconds: 1.95,
+    projectileSpeed: 500,
+    orbitRadius: 72,
+    targetRadius: 64,
+    gravityRadius: 112,
+    minTargetDistance: 230,
+    maxTargetDistance: 315,
+    successesToComplete: 4,
+    completionBonus: 120,
+  },
+  {
+    id: "medium",
+    label: "Medium",
+    orbitPeriodSeconds: 1.55,
+    projectileSpeed: 545,
+    orbitRadius: 72,
+    targetRadius: 44,
+    gravityRadius: 64,
+    minTargetDistance: 250,
+    maxTargetDistance: 335,
+    successesToComplete: 5,
+    completionBonus: 180,
+  },
+  {
+    id: "difficult",
+    label: "Difficult",
+    orbitPeriodSeconds: 1.18,
+    projectileSpeed: 590,
+    orbitRadius: 72,
+    targetRadius: 32,
+    gravityRadius: 46,
+    minTargetDistance: 265,
+    maxTargetDistance: 350,
+    successesToComplete: 6,
+    completionBonus: 260,
+  },
+];
+
+export const DEMO_RULES = {
+  id: "demo",
+  label: "Demo",
+  orbitPeriodSeconds: 2.12,
+  projectileSpeed: 440,
+  orbitRadius: 72,
+  targetRadius: 86,
+  gravityRadius: 152,
+  minTargetDistance: 205,
+  maxTargetDistance: 270,
+  successesToComplete: 3,
+  completionBonus: 0,
+};
+
+export const TARGET_STAGES = [
+  {
+    id: "white",
+    label: "White",
+    core: "rgba(255,255,255,0.98)",
+    ring: "rgba(255,255,255,0.42)",
+    glow: "rgba(255,255,255,0.42)",
+  },
+  {
+    id: "yellow",
+    label: "Yellow",
+    core: "rgba(255,232,126,0.98)",
+    ring: "rgba(255,232,126,0.52)",
+    glow: "rgba(255,232,126,0.44)",
+  },
+  {
+    id: "orange",
+    label: "Orange",
+    core: "rgba(255,156,72,0.98)",
+    ring: "rgba(255,156,72,0.58)",
+    glow: "rgba(255,156,72,0.5)",
+  },
+  {
+    id: "red",
+    label: "Red",
+    core: "rgba(255,72,82,0.98)",
+    ring: "rgba(255,72,82,0.7)",
+    glow: "rgba(255,72,82,0.62)",
+  },
+];
 
 export const TAU = Math.PI * 2;

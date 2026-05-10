@@ -2,7 +2,6 @@ import {
   clonePoint,
   distance,
   idealLaunchAngle,
-  normalize,
   orbitPoint,
   pointWithinBounds,
   rayCircleIntersectionDistance,
@@ -14,7 +13,7 @@ import {
 } from "./geometry.ts";
 import { phaseForSessionTime, PHASES } from "./phases.ts";
 import { SeededRandom } from "./rng.ts";
-import { APP_VERSION, SETTINGS, TAU } from "./settings.ts";
+import { APP_VERSION, DEMO_RULES, LEVELS, SETTINGS, TARGET_STAGES, TAU } from "./settings.ts";
 import {
   beginTrial,
   createTelemetry,
@@ -25,6 +24,8 @@ import {
 import { computeSummary } from "./summary.ts";
 import { createDriftPlan, updateDriftPlan } from "./volatility.ts";
 
+const LEVEL_IDS = LEVELS.map((level) => level.id);
+
 export class SpaceGlowGame {
   constructor(options = {}) {
     const seed = options.seed ?? String(Date.now());
@@ -34,6 +35,14 @@ export class SpaceGlowGame {
     this.height = options.height ?? 640;
     this.debug = Boolean(options.debug);
     this.mode = "start";
+    this.selectedLevelId = LEVEL_IDS.includes(options.level) ? options.level : "easy";
+    this.levelCursor = LEVEL_IDS.indexOf(this.selectedLevelId);
+    this.levelHits = 0;
+    this.demoHits = 0;
+    this.demoElapsed = 0;
+    this.demoReturnToPlay = false;
+    this.levelCompleteElapsed = 0;
+    this.levelCompleteDuration = 2.4;
     this.score = 0;
     this.streak = 0;
     this.bestStreak = 0;
@@ -56,6 +65,7 @@ export class SpaceGlowGame {
     this.feedback = [];
     this.stars = [];
     this.audioEvents = [];
+    this.explosion = null;
     this.resize(this.width, this.height);
   }
 
@@ -63,13 +73,29 @@ export class SpaceGlowGame {
     this.width = Math.max(320, width);
     this.height = Math.max(420, height);
     this.scale = Math.max(0.72, Math.min(1.18, Math.min(this.width, this.height) / 720));
-    this.orbitRadius = SETTINGS.orbitRadius * this.scale;
-    this.nodeRadius = SETTINGS.nodeRadius * this.scale;
-    this.targetRadius = SETTINGS.targetRadius * this.scale;
-    this.hitGraceRadius = SETTINGS.hitGraceRadius * this.scale;
-    this.projectileSpeed = SETTINGS.projectileSpeed * this.scale;
-    this.angularSpeed = TAU / SETTINGS.orbitPeriodSeconds;
+    this.applyRules();
     if (!this.stars.length) this.createStars();
+  }
+
+  applyRules() {
+    const rules = this.currentRules();
+    this.orbitRadius = rules.orbitRadius * this.scale;
+    this.nodeRadius = SETTINGS.nodeRadius * this.scale;
+    this.targetRadius = rules.targetRadius * this.scale;
+    this.hitGraceRadius = rules.gravityRadius * this.scale;
+    this.gravityRadius = rules.gravityRadius * this.scale;
+    this.projectileSpeed = rules.projectileSpeed * this.scale;
+    this.angularSpeed = TAU / rules.orbitPeriodSeconds;
+  }
+
+  currentLevel() {
+    const index = Math.max(0, Math.min(this.levelCursor, LEVELS.length - 1));
+    return LEVELS[index] ?? LEVELS[0];
+  }
+
+  currentRules() {
+    if (this.mode === "demo") return DEMO_RULES;
+    return this.currentLevel();
   }
 
   createStars() {
@@ -86,22 +112,38 @@ export class SpaceGlowGame {
     }
   }
 
+  setLevel(levelId) {
+    if (!LEVEL_IDS.includes(levelId)) return;
+    this.selectedLevelId = levelId;
+    if (this.mode === "start" || this.mode === "ended") {
+      this.levelCursor = LEVEL_IDS.indexOf(levelId);
+      this.applyRules();
+    }
+  }
+
   startPractice() {
-    this.mode = "practice";
-    this.score = 0;
-    this.streak = 0;
-    this.bestStreak = 0;
+    this.startDemo(true);
+  }
+
+  startDemo(returnToPlay = false) {
+    this.mode = "demo";
+    this.demoReturnToPlay = returnToPlay;
+    this.demoHits = 0;
+    this.demoElapsed = 0;
     this.practiceElapsed = 0;
     this.practiceHits = 0;
-    this.sessionElapsed = 0;
-    this.summary = null;
-    this.telemetry = null;
     this.launch = null;
+    this.trial = null;
     this.trail = [];
     this.feedback = [];
-    this.currentNode = vec(this.width * 0.43, this.height * 0.53);
+    this.explosion = null;
+    this.lastTapGlobalTime = null;
+    this.endReason = null;
+    this.currentNode = vec(this.width * 0.38, this.height * 0.46);
     this.particleAngle = this.rng.range(0, TAU);
+    this.applyRules();
     this.startNewTrial();
+    this.queueAudio("demoStart");
   }
 
   startMeasured() {
@@ -110,9 +152,19 @@ export class SpaceGlowGame {
     this.streak = 0;
     this.bestStreak = 0;
     this.sessionElapsed = 0;
+    this.summary = null;
+    this.endReason = null;
+    this.levelCursor = LEVEL_IDS.indexOf(this.selectedLevelId);
+    if (this.levelCursor < 0) this.levelCursor = 0;
+    this.levelHits = 0;
     this.launch = null;
     this.trail = [];
     this.feedback = [];
+    this.explosion = null;
+    this.lastTapGlobalTime = null;
+    this.currentNode = vec(this.width * 0.38, this.height * 0.48);
+    this.particleAngle = this.rng.range(0, TAU);
+    this.applyRules();
     this.telemetry = createTelemetry({
       sessionId: makeSessionId(this.seed),
       seed: this.seed,
@@ -132,10 +184,14 @@ export class SpaceGlowGame {
     this.bestStreak = 0;
     this.practiceElapsed = 0;
     this.practiceHits = 0;
+    this.demoHits = 0;
+    this.demoElapsed = 0;
     this.sessionElapsed = 0;
     this.globalElapsed = 0;
     this.trialCounter = 0;
     this.tapCounter = 0;
+    this.levelCursor = LEVEL_IDS.indexOf(this.selectedLevelId);
+    this.levelHits = 0;
     this.launch = null;
     this.trial = null;
     this.telemetry = null;
@@ -143,7 +199,9 @@ export class SpaceGlowGame {
     this.lastTapGlobalTime = null;
     this.trail = [];
     this.feedback = [];
+    this.explosion = null;
     this.stars = [];
+    this.applyRules();
     this.createStars();
   }
 
@@ -153,24 +211,30 @@ export class SpaceGlowGame {
     this.feedback = this.feedback
       .map((item) => ({ ...item, age: item.age + step }))
       .filter((item) => item.age < item.life);
+    this.updateExplosion(step);
 
-    if (this.mode === "practice") {
-      this.practiceElapsed += step;
-      if (this.practiceElapsed >= SETTINGS.practiceMaxSeconds) {
-        this.startMeasured();
+    if (this.mode === "levelComplete") {
+      this.sessionElapsed = Math.min(SETTINGS.sessionSeconds, this.sessionElapsed + step);
+      if (this.sessionElapsed >= SETTINGS.sessionSeconds) {
+        this.endSession("time-complete");
         return;
       }
+      this.levelCompleteElapsed += step;
+      if (this.levelCompleteElapsed >= this.levelCompleteDuration) this.startNextLevel();
+      return;
     }
+
+    if (this.mode === "demo") this.demoElapsed += step;
 
     if (this.mode === "running") {
       this.sessionElapsed = Math.min(SETTINGS.sessionSeconds, this.sessionElapsed + step);
       if (this.sessionElapsed >= SETTINGS.sessionSeconds) {
-        this.endSession();
+        this.endSession("time-complete");
         return;
       }
     }
 
-    if (this.mode !== "practice" && this.mode !== "running") return;
+    if (this.mode !== "demo" && this.mode !== "running") return;
 
     if (this.launch) {
       this.updateLaunch(step);
@@ -182,11 +246,7 @@ export class SpaceGlowGame {
   }
 
   tap(inputKind = "tap") {
-    if (this.mode === "start") {
-      this.startPractice();
-      return;
-    }
-    if (this.mode !== "practice" && this.mode !== "running") return;
+    if (this.mode !== "demo" && this.mode !== "running") return;
 
     const rapid =
       this.lastTapGlobalTime !== null &&
@@ -212,7 +272,7 @@ export class SpaceGlowGame {
       origin,
       direction,
       this.targetNode,
-      this.hitGraceRadius,
+      this.gravityRadius,
     );
     const willHit = hitDistance !== null;
 
@@ -270,7 +330,7 @@ export class SpaceGlowGame {
       timingDirection: direction,
       wouldHitTarget: overrides.wouldHitTarget,
       waitTimeBeforeTapSeconds: waitTime,
-      rotationsWaited: waitTime / SETTINGS.orbitPeriodSeconds,
+      rotationsWaited: waitTime / this.currentRules().orbitPeriodSeconds,
       targetHadDrifted: Boolean(this.trial.driftPlan?.occurred),
       targetStillDrifting: Boolean(this.trial.targetStillDrifting),
       launchSucceeded: overrides.launchSucceeded,
@@ -295,21 +355,42 @@ export class SpaceGlowGame {
 
     const trialId = this.launch.trialId;
     if (this.launch.willHit) {
-      this.currentNode = clonePoint(this.launch.frozenTarget);
+      const caughtPoint = clonePoint(this.launch.frozenTarget);
+      this.currentNode = caughtPoint;
       this.particleAngle = this.angleFromNode(this.launch.particlePosition, this.currentNode);
-      this.score += SETTINGS.scoring.hit;
-      if ((this.streak + 1) % SETTINGS.scoring.streakBonusEvery === 0) this.score += 1;
+
+      if (this.mode === "demo") {
+        this.demoHits += 1;
+        this.practiceHits = this.demoHits;
+        this.score += 5;
+        this.streak += 1;
+        this.bestStreak = Math.max(this.bestStreak, this.streak);
+        this.addFeedback("catch", this.currentNode);
+        this.queueAudio("hit");
+        this.launch = null;
+        if (this.demoHits >= DEMO_RULES.successesToComplete) {
+          this.queueAudio("demoComplete");
+          if (this.demoReturnToPlay) this.startMeasured();
+          else this.mode = "start";
+        } else {
+          this.startNewTrial();
+        }
+        return;
+      }
+
+      const level = this.currentLevel();
+      this.score += SETTINGS.scoring.hit + this.streak * 2;
+      if ((this.streak + 1) % SETTINGS.scoring.streakBonusEvery === 0) this.score += 25;
       this.streak += 1;
       this.bestStreak = Math.max(this.bestStreak, this.streak);
-      if (this.mode === "practice") this.practiceHits += 1;
-      if (this.mode === "running" && this.telemetry) {
-        finishTrial(this.telemetry, trialId, "hit", this.sessionElapsed, this.currentNode);
-      }
-      this.addFeedback("catch", this.currentNode);
+      this.levelHits += 1;
+      if (this.telemetry) finishTrial(this.telemetry, trialId, "hit", this.sessionElapsed, caughtPoint);
+      this.addFeedback(this.levelHits >= level.successesToComplete ? "level" : "catch", caughtPoint);
       this.queueAudio("hit");
       this.launch = null;
-      if (this.mode === "practice" && this.practiceHits >= SETTINGS.practiceHitsToStart) {
-        this.startMeasured();
+
+      if (this.levelHits >= level.successesToComplete) {
+        this.completeLevel(caughtPoint);
       } else {
         this.startNewTrial();
       }
@@ -326,7 +407,37 @@ export class SpaceGlowGame {
     this.startNewTrial();
   }
 
+  completeLevel(point) {
+    const level = this.currentLevel();
+    this.score += level.completionBonus;
+    this.mode = "levelComplete";
+    this.levelCompleteElapsed = 0;
+    this.explosion = createExplosion(this.rng, point, this.getTargetColor());
+    this.queueAudio("levelComplete");
+    this.queueAudio("vibrateStrong");
+  }
+
+  startNextLevel() {
+    this.levelCursor += 1;
+    if (this.levelCursor >= LEVELS.length) {
+      this.endSession("all-levels-cleared");
+      return;
+    }
+    this.mode = "running";
+    this.levelHits = 0;
+    this.launch = null;
+    this.trail = [];
+    this.feedback = [];
+    this.explosion = null;
+    this.currentNode = vec(this.width * 0.38, this.height * 0.48);
+    this.particleAngle = this.rng.range(0, TAU);
+    this.applyRules();
+    this.startNewTrial();
+    this.queueAudio("nextLevel");
+  }
+
   startNewTrial() {
+    this.applyRules();
     const phase = this.mode === "running" ? phaseForSessionTime(this.sessionElapsed) : PHASES.practice;
     const target = this.generateTarget();
     this.targetNode = clonePoint(target);
@@ -346,8 +457,8 @@ export class SpaceGlowGame {
 
     this.trial = {
       id: `trial-${++this.trialCounter}`,
-      startTime: this.mode === "running" ? this.sessionElapsed : this.practiceElapsed,
-      phase: phase.id,
+      startTime: this.mode === "running" ? this.sessionElapsed : this.demoElapsed,
+      phase: this.mode === "running" ? phase.id : "demo",
       currentNode: clonePoint(this.currentNode),
       targetNode: clonePoint(target),
       targetOriginalPosition: clonePoint(target),
@@ -376,12 +487,14 @@ export class SpaceGlowGame {
   }
 
   generateTarget() {
-    const margin = Math.max(78, this.orbitRadius + this.targetRadius + 16);
-    const minDistance = Math.min(SETTINGS.minTargetDistance * this.scale, Math.min(this.width, this.height) * 0.35);
-    const maxDistance = Math.min(SETTINGS.maxTargetDistance * this.scale, Math.min(this.width, this.height) * 0.48);
+    const rules = this.currentRules();
+    const margin = Math.max(78, this.orbitRadius + this.gravityRadius + 12);
+    const minDistance = Math.min(rules.minTargetDistance * this.scale, Math.min(this.width, this.height) * 0.36);
+    const maxDistance = Math.min(rules.maxTargetDistance * this.scale, Math.min(this.width, this.height) * 0.5);
 
-    for (let attempt = 0; attempt < 80; attempt += 1) {
-      const angle = this.rng.range(0, TAU);
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const preferredAngle = this.mode === "demo" && attempt < 12 ? this.rng.range(-0.45, 0.45) : this.rng.range(0, TAU);
+      const angle = preferredAngle + (this.currentNode.x > this.width * 0.5 ? Math.PI : 0);
       const d = this.rng.range(minDistance, Math.max(minDistance + 24, maxDistance));
       const candidate = {
         x: this.currentNode.x + Math.cos(angle) * d,
@@ -389,17 +502,16 @@ export class SpaceGlowGame {
       };
       if (
         pointWithinBounds(candidate, this.width, this.height, margin) &&
-        distance(candidate, this.currentNode) > this.orbitRadius + this.targetRadius + 70
+        distance(candidate, this.currentNode) > this.orbitRadius + this.gravityRadius + 52
       ) {
         return candidate;
       }
     }
 
-    const fallback = {
+    return {
       x: this.width * (this.currentNode.x < this.width * 0.5 ? 0.72 : 0.28),
-      y: this.height * this.rng.range(0.34, 0.66),
+      y: this.height * this.rng.range(0.32, 0.58),
     };
-    return fallback;
   }
 
   currentParticlePosition() {
@@ -419,7 +531,7 @@ export class SpaceGlowGame {
     this.trail = this.trail
       .map((item) => ({ ...item, age: item.age + 0.016 }))
       .filter((item) => item.age < 0.9)
-      .slice(-42);
+      .slice(-52);
   }
 
   addFeedback(kind, point) {
@@ -428,8 +540,20 @@ export class SpaceGlowGame {
       x: point.x,
       y: point.y,
       age: 0,
-      life: kind === "miss" ? 0.55 : 0.42,
+      life: kind === "level" ? 1.2 : kind === "miss" ? 0.55 : 0.42,
     });
+  }
+
+  updateExplosion(dt) {
+    if (!this.explosion) return;
+    this.explosion.age += dt;
+    this.explosion.particles = this.explosion.particles.map((particle) => ({
+      ...particle,
+      x: particle.x + particle.vx * dt,
+      y: particle.y + particle.vy * dt,
+      vy: particle.vy + 18 * dt,
+      age: particle.age + dt,
+    }));
   }
 
   queueAudio(kind) {
@@ -442,13 +566,16 @@ export class SpaceGlowGame {
     return events;
   }
 
-  endSession() {
-    if (this.mode !== "running") return;
+  endSession(reason = "complete") {
+    if (this.mode === "ended") return;
     this.mode = "ended";
-    this.sessionElapsed = SETTINGS.sessionSeconds;
+    this.endReason = reason;
     if (this.telemetry) {
       this.summary = computeSummary(this.telemetry);
       this.telemetry.summary = this.summary;
+      this.telemetry.endReason = reason;
+      this.telemetry.finalLevel = this.currentLevel().id;
+      this.telemetry.finalScore = this.score;
     }
     this.queueAudio("end");
   }
@@ -457,16 +584,58 @@ export class SpaceGlowGame {
     this.debug = !this.debug;
   }
 
+  getTargetStage() {
+    if (this.mode === "demo") {
+      const demoProgress = this.demoHits / Math.max(1, DEMO_RULES.successesToComplete - 1);
+      return Math.min(
+        TARGET_STAGES.length - 1,
+        Math.floor(demoProgress * (TARGET_STAGES.length - 1)),
+      );
+    }
+    const level = this.currentLevel();
+    if (!level || level.successesToComplete <= 1) return TARGET_STAGES.length - 1;
+    return Math.min(
+      TARGET_STAGES.length - 1,
+      Math.floor((this.levelHits / (level.successesToComplete - 1)) * (TARGET_STAGES.length - 1)),
+    );
+  }
+
+  getTargetColor() {
+    return TARGET_STAGES[this.getTargetStage()] ?? TARGET_STAGES[0];
+  }
+
+  getTimingCue(ideal) {
+    const idealPoint = orbitPoint(this.currentNode, this.orbitRadius, ideal);
+    const direction = tangentDirection(ideal);
+    const delta = signedAngleDelta(this.particleAngle, ideal);
+    const timingDifference = delta / this.angularSpeed;
+    const windowSeconds = this.mode === "demo" ? 0.18 : 0.11;
+    return {
+      idealAngle: ideal,
+      idealPoint,
+      tangentEnd: {
+        x: idealPoint.x + direction.x * distance(idealPoint, this.targetNode),
+        y: idealPoint.y + direction.y * distance(idealPoint, this.targetNode),
+      },
+      timingDifferenceSeconds: timingDifference,
+      windowSeconds,
+      windowRadians: windowSeconds * this.angularSpeed,
+      inWindow: Math.abs(timingDifference) <= windowSeconds,
+      intensity: Math.max(0, 1 - Math.abs(timingDifference) / (windowSeconds * 3.2)),
+    };
+  }
+
   getRenderState() {
     const phase =
       this.mode === "running"
         ? phaseForSessionTime(this.sessionElapsed)
-        : this.mode === "practice"
-          ? PHASES.practice
+        : this.mode === "demo"
+          ? { ...PHASES.practice, id: "demo", label: "Demo" }
           : null;
     const particle = this.currentParticlePosition();
     const ideal = idealLaunchAngle(this.currentNode, this.targetNode, this.orbitRadius);
-    const timingDifference = signedAngleDelta(this.particleAngle, ideal) / this.angularSpeed;
+    const timingCue = this.getTimingCue(ideal);
+    const level = this.currentLevel();
 
     return {
       appVersion: APP_VERSION,
@@ -483,6 +652,7 @@ export class SpaceGlowGame {
       particleAngle: this.particleAngle,
       orbitRadius: this.orbitRadius,
       targetRadius: this.targetRadius,
+      gravityRadius: this.gravityRadius,
       nodeRadius: this.nodeRadius,
       trail: this.trail.map((item) => ({ x: item.x, y: item.y, age: item.age })),
       stars: this.stars,
@@ -493,16 +663,31 @@ export class SpaceGlowGame {
       score: this.score,
       streak: this.streak,
       bestStreak: this.bestStreak,
-      practiceHits: this.practiceHits,
-      practiceTargetHits: SETTINGS.practiceHitsToStart,
-      practiceElapsed: this.practiceElapsed,
+      selectedLevelId: this.selectedLevelId,
+      levelId: level.id,
+      levelLabel: level.label,
+      levelIndex: this.levelCursor,
+      levelCount: LEVELS.length,
+      levelHits: this.levelHits,
+      levelTargetHits: level.successesToComplete,
+      demoHits: this.demoHits,
+      demoTargetHits: DEMO_RULES.successesToComplete,
+      targetStage: this.getTargetStage(),
+      targetColor: this.getTargetColor(),
+      timingCue,
+      showTimingCues: this.mode === "demo" || this.mode === "running",
+      practiceHits: this.demoHits,
+      practiceTargetHits: DEMO_RULES.successesToComplete,
+      practiceElapsed: this.demoElapsed,
       sessionElapsed: this.sessionElapsed,
       sessionRemaining: Math.max(0, SETTINGS.sessionSeconds - this.sessionElapsed),
       feedback: this.feedback,
+      explosion: this.explosion,
+      endReason: this.endReason,
       debug: {
         enabled: this.debug,
         idealLaunchAngle: ideal,
-        timingDifferenceSeconds: timingDifference,
+        timingDifferenceSeconds: timingCue.timingDifferenceSeconds,
         trialId: this.trial?.id ?? null,
         trialPhase: this.trial?.phase ?? null,
         driftScheduled: Boolean(this.trial?.driftPlan?.scheduled),
@@ -515,19 +700,30 @@ export class SpaceGlowGame {
     const finishedTrials = this.telemetry
       ? this.telemetry.trials.filter((trial) => trial.outcome === "hit" || trial.outcome === "miss")
       : [];
-    const totalAttempts = finishedTrials.length || this.practiceHits;
-    const hits = finishedTrials.filter((trial) => trial.outcome === "hit").length || this.practiceHits;
+    const totalAttempts = finishedTrials.length || this.demoHits;
+    const hits = finishedTrials.filter((trial) => trial.outcome === "hit").length || this.demoHits;
     const accuracy = totalAttempts ? Math.round((hits / totalAttempts) * 100) : 0;
+    const level = this.currentLevel();
     return {
       mode: this.mode,
       score: this.score,
       streak: this.streak,
       bestStreak: this.bestStreak,
       accuracy,
+      selectedLevelId: this.selectedLevelId,
+      levelId: level.id,
+      levelLabel: level.label,
+      levelIndex: this.levelCursor,
+      levelCount: LEVELS.length,
+      levelHits: this.levelHits,
+      levelTargetHits: level.successesToComplete,
+      demoHits: this.demoHits,
+      demoTargetHits: DEMO_RULES.successesToComplete,
       sessionRemaining: Math.max(0, SETTINGS.sessionSeconds - this.sessionElapsed),
-      practiceHits: this.practiceHits,
-      practiceTargetHits: SETTINGS.practiceHitsToStart,
+      practiceHits: this.demoHits,
+      practiceTargetHits: DEMO_RULES.successesToComplete,
       summary: this.summary,
+      endReason: this.endReason,
     };
   }
 
@@ -535,6 +731,25 @@ export class SpaceGlowGame {
     if (!this.telemetry) return null;
     return this.telemetry;
   }
+}
+
+function createExplosion(rng, point, color) {
+  const particles = [];
+  for (let i = 0; i < 42; i += 1) {
+    const angle = rng.range(0, TAU);
+    const speed = rng.range(80, 330);
+    particles.push({
+      x: point.x,
+      y: point.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      radius: rng.range(2, 8),
+      age: 0,
+      life: rng.range(0.65, 1.4),
+      color: i % 3 === 0 ? "rgba(255,255,255,0.95)" : color.core,
+    });
+  }
+  return { x: point.x, y: point.y, age: 0, color, particles };
 }
 
 function makeSessionId(seed) {

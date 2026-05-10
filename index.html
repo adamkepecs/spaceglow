@@ -22,31 +22,70 @@
         <span class="hud-label">Streak</span>
         <strong id="hudStreak">0</strong>
       </div>
+      <div>
+        <span class="hud-label">Level</span>
+        <strong id="hudLevel">1/3</strong>
+      </div>
+      <div>
+        <span class="hud-label">Target</span>
+        <strong id="hudProgress">1/4</strong>
+      </div>
     </header>
 
     <main class="screen" id="startScreen">
       <section class="screen-content">
-        <p class="eyebrow">Austere MVP</p>
+        <p class="eyebrow">Arcade timing prototype</p>
         <h1>Space Glow</h1>
-        <p class="lede">Time the release. Catch the next glow. Let the rhythm settle.</p>
-        <button class="primary-button" id="startButton" type="button">
-          <span aria-hidden="true">◇</span>
-          Begin practice
-        </button>
+        <p class="lede">Catch each glow as it warms from white to red.</p>
+
+        <div class="level-picker" role="group" aria-label="Choose starting level">
+          <button class="level-button is-active" data-level="easy" type="button" aria-pressed="true">
+            <span>Easy</span>
+            <small>Large field</small>
+          </button>
+          <button class="level-button" data-level="medium" type="button" aria-pressed="false">
+            <span>Medium</span>
+            <small>Faster orbit</small>
+          </button>
+          <button class="level-button" data-level="difficult" type="button" aria-pressed="false">
+            <span>Difficult</span>
+            <small>Tight catch</small>
+          </button>
+        </div>
+
+        <div class="actions">
+          <button class="primary-button" id="playButton" type="button">Play</button>
+          <button class="secondary-button" id="demoButton" type="button">Demo</button>
+          <button class="secondary-button" id="helpButton" type="button">Help</button>
+        </div>
+        <p class="start-note" id="firstRunNote">First play opens a guided demo, then starts your run.</p>
       </section>
     </main>
 
-    <main class="screen subtle" id="practiceScreen" hidden>
-      <section class="screen-content compact">
-        <p class="eyebrow">Practice</p>
-        <h2><span id="practiceHits">0</span>/3 catches</h2>
-        <p class="lede">Tap when the orbiting glow points toward the target.</p>
+    <aside class="guidance-panel" id="guidancePanel" hidden>
+      <p class="guidance-title" id="guidanceTitle">Demo</p>
+      <p class="guidance-body" id="guidanceBody">Watch the gold arc.</p>
+    </aside>
+
+    <dialog class="help-dialog" id="helpDialog">
+      <section>
+        <p class="eyebrow">How to play</p>
+        <h2>One tap. One release.</h2>
+        <p>
+          The bright particle orbits the blue node. Tap when it reaches the gold release window
+          and it will fly along the guide line into the target field.
+        </p>
+        <p>
+          Each catch warms the target from white to yellow, orange, then red. Catch the red target
+          to clear the level and start the next orbit.
+        </p>
+        <button class="primary-button" id="closeHelpButton" type="button">Got it</button>
       </section>
-    </main>
+    </dialog>
 
     <main class="screen" id="endScreen" hidden>
       <section class="screen-content">
-        <p class="eyebrow">Session complete</p>
+        <p class="eyebrow">Run complete</p>
         <h1 id="endScore">Score: 0</h1>
         <dl class="results">
           <div>
@@ -67,12 +106,8 @@
           </div>
         </dl>
         <div class="actions">
-          <button class="primary-button" id="restartButton" type="button">
-            <span aria-hidden="true">↻</span>
-            Play again
-          </button>
+          <button class="primary-button" id="restartButton" type="button">Play again</button>
           <button class="secondary-button" id="downloadButton" type="button">
-            <span aria-hidden="true">↓</span>
             Download session data
           </button>
         </div>

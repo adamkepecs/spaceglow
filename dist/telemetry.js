@@ -1,4 +1,4 @@
-import { APP_VERSION, SETTINGS } from "./settings.js";
+import { APP_VERSION, DEMO_RULES, LEVELS, SETTINGS, TARGET_STAGES } from "./settings.js";
 
 export function createTelemetry({ sessionId, seed, width, height, timestamp }) {
   return {
@@ -7,7 +7,12 @@ export function createTelemetry({ sessionId, seed, width, height, timestamp }) {
     appVersion: APP_VERSION,
     screen: { width, height },
     randomSeed: seed,
-    settings: SETTINGS,
+    settings: {
+      ...SETTINGS,
+      levels: LEVELS,
+      demo: DEMO_RULES,
+      targetStages: TARGET_STAGES.map((stage) => ({ id: stage.id, label: stage.label })),
+    },
     trials: [],
     tapEvents: [],
     driftEvents: [],
