@@ -35,6 +35,14 @@ Useful test URL:
 http://127.0.0.1:4173/?debug=1&seed=space-glow-mvp
 ```
 
+## Run from GitHub Pages
+
+After the Pages workflow finishes, open:
+
+```text
+https://adamkepecs.github.io/spaceglow/
+```
+
 ## Verify core logic
 
 ```bash
