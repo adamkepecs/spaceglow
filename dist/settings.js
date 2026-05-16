@@ -20,6 +20,20 @@ export const SETTINGS = {
   rapidTapWindowSeconds: 0.35,
   missResetSeconds: 0.72,
   hitSettleSeconds: 0.08,
+  shields: {
+    max: 10,
+    startByLevel: {
+      easy: 10,
+      medium: 8,
+      difficult: 7,
+    },
+    missCost: 1,
+    rapidTapCost: 1,
+    normalHitGain: 1,
+    coreHitGain: 1,
+    bullseyeHitGain: 2,
+    levelClearGain: 2,
+  },
   volatility: {
     driftChance: 0.58,
     driftDelayMinSeconds: 0.55,
@@ -30,8 +44,15 @@ export const SETTINGS = {
     driftMaxDistance: 76,
   },
   scoring: {
-    hit: 10,
+    baseHit: 20,
+    centerBonusMax: 140,
+    bullseyeBonus: 80,
+    coreBonus: 35,
+    solidBonus: 10,
+    streakMultiplierStep: 0.06,
+    maxStreakMultiplier: 2.5,
     streakBonusEvery: 5,
+    streakBonus: 50,
   },
 };
 
@@ -39,6 +60,7 @@ export const LEVELS = [
   {
     id: "easy",
     label: "Easy",
+    shortLabel: "Wide field",
     orbitPeriodSeconds: 1.95,
     projectileSpeed: 500,
     orbitRadius: 72,
@@ -47,11 +69,13 @@ export const LEVELS = [
     minTargetDistance: 230,
     maxTargetDistance: 315,
     successesToComplete: 4,
-    completionBonus: 120,
+    completionBonus: 200,
+    targetMotion: { enabled: false },
   },
   {
     id: "medium",
     label: "Medium",
+    shortLabel: "Moving planets",
     orbitPeriodSeconds: 1.55,
     projectileSpeed: 545,
     orbitRadius: 72,
@@ -60,11 +84,20 @@ export const LEVELS = [
     minTargetDistance: 250,
     maxTargetDistance: 335,
     successesToComplete: 5,
-    completionBonus: 180,
+    completionBonus: 300,
+    targetMotion: {
+      enabled: true,
+      chance: 0.35,
+      amplitude: 22,
+      periodSecondsMin: 2.8,
+      periodSecondsMax: 4.2,
+      freezeOnLaunch: true,
+    },
   },
   {
     id: "difficult",
     label: "Difficult",
+    shortLabel: "Fast + moving",
     orbitPeriodSeconds: 1.18,
     projectileSpeed: 590,
     orbitRadius: 72,
@@ -73,7 +106,15 @@ export const LEVELS = [
     minTargetDistance: 265,
     maxTargetDistance: 350,
     successesToComplete: 6,
-    completionBonus: 260,
+    completionBonus: 450,
+    targetMotion: {
+      enabled: true,
+      chance: 0.6,
+      amplitude: 34,
+      periodSecondsMin: 2.1,
+      periodSecondsMax: 3.4,
+      freezeOnLaunch: true,
+    },
   },
 ];
 
@@ -89,6 +130,7 @@ export const DEMO_RULES = {
   maxTargetDistance: 270,
   successesToComplete: 3,
   completionBonus: 0,
+  targetMotion: { enabled: false },
 };
 
 export const TARGET_STAGES = [

@@ -4,29 +4,30 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Space Glow</title>
-    <link rel="stylesheet" href="./styles.css?v=2026-05-10-levels" />
+    <link rel="stylesheet" href="./styles.css?v=2026-05-15-gameplay" />
   </head>
   <body>
     <canvas id="gameCanvas" aria-label="Space Glow game canvas"></canvas>
 
     <header class="hud" id="hud" hidden>
-      <div>
-        <span class="hud-label">Time</span>
-        <strong id="hudTime">02:00</strong>
-      </div>
-      <div>
+      <div class="hud-moment" id="hudMoment" aria-live="polite">Ready</div>
+      <div class="hud-cell hud-score-cell">
         <span class="hud-label">Score</span>
         <strong id="hudScore">0</strong>
       </div>
-      <div>
-        <span class="hud-label">Streak</span>
-        <strong id="hudStreak">0</strong>
+      <div class="hud-cell">
+        <span class="hud-label">Combo</span>
+        <strong id="hudCombo">x1.0</strong>
       </div>
-      <div>
+      <div class="hud-cell">
+        <span class="hud-label">Shield</span>
+        <strong id="hudShields">10/10</strong>
+      </div>
+      <div class="hud-cell">
         <span class="hud-label">Level</span>
         <strong id="hudLevel">1/3</strong>
       </div>
-      <div>
+      <div class="hud-cell">
         <span class="hud-label">Target</span>
         <strong id="hudProgress">1/4</strong>
       </div>
@@ -36,20 +37,20 @@
       <section class="screen-content">
         <p class="eyebrow">Arcade timing prototype</p>
         <h1>Space Glow</h1>
-        <p class="lede">Catch each glow as it warms from white to red.</p>
+        <p class="lede">Time the release. Ignite the planet. Chain bigger booms.</p>
 
         <div class="level-picker" role="group" aria-label="Choose starting level">
           <button class="level-button is-active" data-level="easy" type="button" aria-pressed="true">
             <span>Easy</span>
-            <small>Large field</small>
+            <small>Wide field</small>
           </button>
           <button class="level-button" data-level="medium" type="button" aria-pressed="false">
             <span>Medium</span>
-            <small>Faster orbit</small>
+            <small>Moving planets</small>
           </button>
           <button class="level-button" data-level="difficult" type="button" aria-pressed="false">
             <span>Difficult</span>
-            <small>Tight catch</small>
+            <small>Fast + tight</small>
           </button>
         </div>
 
@@ -72,12 +73,11 @@
         <p class="eyebrow">How to play</p>
         <h2>One tap. One release.</h2>
         <p>
-          The bright particle orbits the blue node. Tap when it reaches the gold release window
-          and it will fly along the guide line into the target field.
+          Tap when the orbiting glow reaches the gold release window. Closer center hits make
+          bigger booms and score more.
         </p>
         <p>
-          Each catch warms the target from white to yellow, orange, then red. Catch the red target
-          to clear the level and start the next orbit.
+          Hits refill shields; misses drain them. Clear the red target to start the next orbit.
         </p>
         <button class="primary-button" id="closeHelpButton" type="button">Got it</button>
       </section>
@@ -85,9 +85,13 @@
 
     <main class="screen" id="endScreen" hidden>
       <section class="screen-content">
-        <p class="eyebrow">Run complete</p>
+        <p class="eyebrow" id="endTitle">Run complete</p>
         <h1 id="endScore">Score: 0</h1>
         <dl class="results">
+          <div>
+            <dt>Best boom</dt>
+            <dd id="endBestBoom">0</dd>
+          </div>
           <div>
             <dt>Best streak</dt>
             <dd id="endBestStreak">0</dd>
@@ -95,6 +99,10 @@
           <div>
             <dt>Accuracy</dt>
             <dd id="endAccuracy">0%</dd>
+          </div>
+          <div>
+            <dt>Shields</dt>
+            <dd id="endShields">0/10</dd>
           </div>
           <div>
             <dt>Timing stability</dt>
@@ -115,6 +123,6 @@
     </main>
 
     <pre class="debug-panel" id="debugPanel" hidden></pre>
-    <script type="module" src="./dist/web-main.js?v=2026-05-10-levels"></script>
+    <script type="module" src="./dist/web-main.js?v=2026-05-15-gameplay"></script>
   </body>
 </html>

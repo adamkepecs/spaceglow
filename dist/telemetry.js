@@ -31,6 +31,7 @@ export function beginTrial(telemetry, trial) {
     targetDriftOccurred: false,
     targetOriginalPosition: roundPoint(trial.targetOriginalPosition),
     targetFinalPosition: roundPoint(trial.targetFinalPosition),
+    targetMotionActive: Boolean(trial.targetMotionActive),
     outcome: "pending",
     trialDuration: null,
   });
@@ -79,15 +80,30 @@ export function recordTap(telemetry, event) {
     launchSucceeded: event.launchSucceeded,
     rapidTap: event.rapidTap,
     extraRapidTap: event.extraRapidTap,
+    centerDistance: round(event.centerDistance),
+    centerCloseness: round(event.centerCloseness),
+    hitQuality: event.hitQuality,
+    pointsAwarded: event.pointsAwarded,
+    shieldDelta: event.shieldDelta,
+    shieldsAfter: event.shieldsAfter,
   });
 }
 
-export function finishTrial(telemetry, trialId, outcome, sessionTime, targetPosition) {
+export function finishTrial(telemetry, trialId, outcome, sessionTime, targetPosition, details = {}) {
   const row = telemetry.trials.find((item) => item.id === trialId);
   if (!row) return;
   row.outcome = outcome;
   row.trialDuration = round(sessionTime - row.trialStartTime);
   row.targetFinalPosition = roundPoint(targetPosition);
+  row.hitQuality = details.hitQuality ?? null;
+  row.centerDistance = round(details.centerDistance);
+  row.centerCloseness = round(details.centerCloseness);
+  row.pointsAwarded = details.pointsAwarded ?? 0;
+  row.shieldDelta = details.shieldDelta ?? 0;
+  row.shieldsAfter = details.shieldsAfter ?? null;
+  if (details.targetMotionActive !== undefined) {
+    row.targetMotionActive = Boolean(details.targetMotionActive);
+  }
 }
 
 export function round(value) {

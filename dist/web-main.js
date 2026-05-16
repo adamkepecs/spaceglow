@@ -60,6 +60,10 @@ function playSound(kind) {
     if (navigator.vibrate) navigator.vibrate([55, 35, 95, 30, 140]);
     return;
   }
+  if (kind === "vibrateSoft") {
+    if (navigator.vibrate) navigator.vibrate(24);
+    return;
+  }
 
   const ac = ensureAudio();
   if (!ac) return;
@@ -67,10 +71,20 @@ function playSound(kind) {
   if (kind === "launch") {
     tone(ac, 320, 520, 0.09, 0, "sine", 0.035);
     tone(ac, 620, 840, 0.07, 0.035, "triangle", 0.018);
-  } else if (kind === "hit") {
-    tone(ac, 560, 760, 0.14, 0, "sine", 0.035);
-    tone(ac, 840, 1120, 0.16, 0.05, "sine", 0.026);
-    tone(ac, 1260, 1540, 0.11, 0.12, "triangle", 0.014);
+  } else if (kind === "hitGraze") {
+    tone(ac, 420, 520, 0.08, 0, "sine", 0.018);
+  } else if (kind === "hitSolid") {
+    tone(ac, 560, 760, 0.14, 0, "sine", 0.034);
+    tone(ac, 840, 1120, 0.14, 0.05, "sine", 0.022);
+  } else if (kind === "hitCore") {
+    tone(ac, 620, 920, 0.16, 0, "triangle", 0.04);
+    tone(ac, 930, 1320, 0.18, 0.06, "sine", 0.03);
+    tone(ac, 1480, 1760, 0.12, 0.14, "sine", 0.018);
+  } else if (kind === "hitBullseye") {
+    tone(ac, 680, 980, 0.18, 0, "sine", 0.046);
+    tone(ac, 1020, 1640, 0.22, 0.06, "triangle", 0.034);
+    tone(ac, 1840, 2360, 0.16, 0.18, "sine", 0.022);
+    noiseBurst(ac, 0.08, 0.008, 0.02);
   } else if (kind === "miss") {
     tone(ac, 190, 92, 0.2, 0, "triangle", 0.035);
     noiseBurst(ac, 0.09, 0.012, 0.03);
@@ -265,6 +279,21 @@ function drawTimingCues(state) {
 
 function drawTarget(state) {
   const color = state.targetColor;
+  if (state.targetMotionActive && state.targetMotionPathStart && state.targetMotionPathEnd) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,244,177,0.16)";
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.moveTo(state.targetMotionPathStart.x, state.targetMotionPathStart.y);
+    ctx.lineTo(state.targetMotionPathEnd.x, state.targetMotionPathEnd.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ring(state.targetMotionPathStart.x, state.targetMotionPathStart.y, 5, "rgba(255,244,177,0.16)", 1);
+    ring(state.targetMotionPathEnd.x, state.targetMotionPathEnd.y, 5, "rgba(255,244,177,0.16)", 1);
+    ctx.restore();
+  }
+
   if (state.driftActive) {
     ring(
       state.targetOriginalPosition.x,
@@ -336,10 +365,26 @@ function drawFeedback(state) {
   for (const item of state.feedback) {
     const progress = item.age / item.life;
     ctx.globalAlpha = 1 - progress;
-    ctx.fillStyle = item.kind === "miss" ? "#ff9ab0" : item.kind === "level" ? "#fff4b1" : "#b9ffe1";
+    ctx.fillStyle =
+      item.kind === "miss"
+        ? "#ff9ab0"
+        : item.kind === "level" || item.kind === "bullseye"
+          ? "#fff4b1"
+          : item.kind === "core"
+            ? "#ffc96f"
+            : "#b9ffe1";
     ctx.font = "700 12px Inter, system-ui, sans-serif";
     ctx.textAlign = "center";
-    const label = item.kind === "miss" ? "MISS" : item.kind === "level" ? "LEVEL CLEAR" : "CATCH";
+    const labels = {
+      miss: "MISS",
+      level: "LEVEL CLEAR",
+      bullseye: "BULLSEYE",
+      core: "CORE BOOM",
+      solid: "BOOM",
+      graze: "GRAZE",
+      catch: "CATCH",
+    };
+    const label = labels[item.kind] ?? "BOOM";
     ctx.fillText(label, item.x, item.y - 26 - progress * 18);
     ctx.globalAlpha = 1;
   }
@@ -348,20 +393,28 @@ function drawFeedback(state) {
 function drawExplosion(state) {
   if (!state.explosion) return;
   const explosion = state.explosion;
-  const shock = Math.min(1, explosion.age / 0.7);
+  const power = explosion.power ?? 1;
+  const shock = Math.min(1, explosion.age / (0.55 + power * 0.08));
+  const shockRadius = 28 + shock * Math.max(120, state.gravityRadius * (1.2 + power));
   ring(
     explosion.x,
     explosion.y,
-    28 + shock * Math.max(140, state.gravityRadius * 1.5),
-    `rgba(255,244,177,${0.52 * (1 - shock)})`,
-    2.5,
+    shockRadius,
+    `rgba(255,244,177,${Math.min(0.72, 0.42 + power * 0.08) * (1 - shock)})`,
+    1.5 + power * 0.65,
   );
   for (const particle of explosion.particles) {
     const life = Math.max(0.001, particle.life);
     const alpha = Math.max(0, 1 - particle.age / life);
     if (alpha <= 0) continue;
     ctx.globalAlpha = alpha;
-    glowCircle(particle.x, particle.y, particle.radius * alpha, particle.color, 18 * alpha);
+    glowCircle(
+      particle.x,
+      particle.y,
+      particle.radius * alpha,
+      particle.color,
+      (14 + power * 8) * alpha,
+    );
   }
   ctx.globalAlpha = 1;
 }
@@ -400,18 +453,22 @@ function syncUi(hudState, renderState) {
   hud.hidden = !inPlay;
   startScreen.hidden = hudState.mode !== "start";
   endScreen.hidden = hudState.mode !== "ended";
-  guidancePanel.hidden = !inPlay;
+  guidancePanel.hidden = hudState.mode !== "demo";
 
-  document.querySelector("#hudTime").textContent =
-    hudState.mode === "demo" ? "DEMO" : formatTime(hudState.sessionRemaining);
   document.querySelector("#hudScore").textContent = String(hudState.score);
-  document.querySelector("#hudStreak").textContent = String(hudState.streak);
+  document.querySelector("#hudCombo").textContent =
+    `x${hudState.comboMultiplier.toFixed(1)} · ${hudState.streak}`;
+  document.querySelector("#hudShields").textContent =
+    hudState.mode === "demo" ? "Demo" : `${hudState.shields}/${hudState.maxShields}`;
   document.querySelector("#hudLevel").textContent =
     hudState.mode === "demo" ? "Demo" : `${hudState.levelIndex + 1}/${hudState.levelCount}`;
   document.querySelector("#hudProgress").textContent =
     hudState.mode === "demo"
       ? `${hudState.demoHits}/${hudState.demoTargetHits}`
       : `${Math.min(hudState.levelHits + 1, hudState.levelTargetHits)}/${hudState.levelTargetHits}`;
+  const moment = document.querySelector("#hudMoment");
+  moment.textContent = hudState.lastMoment?.text ?? (hudState.mode === "demo" ? "Watch the window" : "");
+  moment.dataset.quality = hudState.lastMoment?.quality ?? "";
 
   updateLevelButtons(hudState.selectedLevelId);
   updateStartNote();
@@ -420,9 +477,13 @@ function syncUi(hudState, renderState) {
   if (hudState.mode === "ended" && !endScreenRendered) {
     endScreenRendered = true;
     const summary = hudState.summary;
+    document.querySelector("#endTitle").textContent =
+      hudState.endReason === "shields-depleted" ? "Shields depleted" : "Run complete";
     document.querySelector("#endScore").textContent = `Score: ${hudState.score}`;
+    document.querySelector("#endBestBoom").textContent = String(hudState.bestBoom);
     document.querySelector("#endBestStreak").textContent = String(hudState.bestStreak);
     document.querySelector("#endAccuracy").textContent = `${hudState.accuracy}%`;
+    document.querySelector("#endShields").textContent = `${hudState.shields}/${hudState.maxShields}`;
     document.querySelector("#endStability").textContent =
       summary?.playerFacing?.timingStability ?? "--";
     document.querySelector("#endRecovery").textContent =
@@ -437,11 +498,13 @@ function syncUi(hudState, renderState) {
       `phase: ${renderState.phase?.id ?? "--"}`,
       `level: ${renderState.levelLabel} ${renderState.levelHits}/${renderState.levelTargetHits}`,
       `target: ${renderState.targetColor.label}`,
+      `shields: ${renderState.shields}/${renderState.maxShields}`,
       `trial: ${renderState.debug.trialId ?? "--"} (${renderState.debug.trialPhase ?? "--"})`,
       `timing error: ${renderState.debug.timingDifferenceSeconds.toFixed(4)}s`,
       `cue window: ${renderState.timingCue.windowSeconds.toFixed(3)}s`,
       `drift scheduled: ${renderState.debug.driftScheduled}`,
       `target drifting: ${renderState.debug.targetStillDrifting}`,
+      `target moving: ${renderState.debug.targetMotionActive}`,
       `score/streak: ${renderState.score}/${renderState.streak}`,
     ].join("\n");
   }
@@ -451,16 +514,10 @@ function updateGuidance(hudState, renderState) {
   if (hudState.mode === "demo") {
     guidanceTitle.textContent = "Demo";
     guidanceBody.textContent = renderState.timingCue.inWindow
-      ? "Now. Tap as the bright marker opens."
-      : "Watch the gold arc. Release when the orbiting glow reaches it.";
-  } else if (hudState.mode === "levelComplete") {
-    guidanceTitle.textContent = "Level clear";
-    guidanceBody.textContent = "Planet core collapsed. Next orbit forming.";
-  } else {
-    guidanceTitle.textContent = renderState.levelLabel;
-    guidanceBody.textContent = renderState.timingCue.inWindow
-      ? "Release window open."
-      : `${renderState.targetColor.label} target. Build it to red, then clear the level.`;
+      ? "Tap as the glow enters the window."
+      : renderState.demoHits > 0
+        ? "Centered hits make bigger booms."
+        : "Watch the gold arc.";
   }
 }
 

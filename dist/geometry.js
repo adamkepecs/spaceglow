@@ -115,6 +115,13 @@ export function rayCircleIntersectionDistance(origin, direction, center, radius)
   return null;
 }
 
+export function closestDistanceFromRayToPoint(origin, direction, point) {
+  const toPoint = sub(point, origin);
+  const along = Math.max(0, dot(toPoint, direction));
+  const closest = add(origin, scale(direction, along));
+  return distance(closest, point);
+}
+
 export function pointWithinBounds(point, width, height, margin) {
   return (
     point.x >= margin &&
