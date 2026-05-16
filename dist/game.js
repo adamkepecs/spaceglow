@@ -46,14 +46,18 @@ export class SpaceGlowGame {
     this.demoElapsed = 0;
     this.demoReturnToPlay = false;
     this.levelCompleteElapsed = 0;
-    this.levelCompleteDuration = 2.4;
+    this.levelCompleteDuration = 0.86;
     this.score = 0;
     this.streak = 0;
     this.bestStreak = 0;
     this.bestBoom = 0;
+    this.bestComboMultiplier = 1;
+    this.bullseyes = 0;
+    this.overdriveRemainingSeconds = 0;
     this.maxShields = SETTINGS.shields.max;
     this.shields = 0;
     this.shieldsDepletedPending = false;
+    this.furthestLevelIndex = this.levelCursor;
     this.practiceElapsed = 0;
     this.practiceHits = 0;
     this.sessionElapsed = 0;
@@ -75,6 +79,10 @@ export class SpaceGlowGame {
     this.audioEvents = [];
     this.explosion = null;
     this.lastMoment = null;
+    this.missGhost = null;
+    this.levelBanner = null;
+    this.bonusComet = null;
+    this.screenShake = { remaining: 0, duration: 0, intensity: 0 };
     this.resize(this.width, this.height);
   }
 
@@ -144,7 +152,10 @@ export class SpaceGlowGame {
     if (this.mode !== "running") return 0;
     const cost = reason === "rapid-tap" ? SETTINGS.shields.rapidTapCost : SETTINGS.shields.missCost;
     const delta = this.changeShields(-cost);
-    if (delta < 0) this.setMoment("SHIELD LOST", 0, "miss", 0.9);
+    if (delta < 0) {
+      this.setMoment("SHIELD LOST", 0, "miss", 0.9);
+      this.queueAudio("shieldLost");
+    }
     if (this.shields <= 0) this.shieldsDepletedPending = true;
     return delta;
   }
@@ -152,8 +163,12 @@ export class SpaceGlowGame {
   gainShield(amount, reason) {
     if (this.mode !== "running") return 0;
     const delta = this.changeShields(amount);
+    if (delta > 0 && reason !== "level-clear") {
+      this.queueAudio("shieldGained");
+    }
     if (delta > 0 && reason === "level-clear") {
       this.setMoment(`LEVEL CLEAR +${this.currentLevel().completionBonus}`, this.currentLevel().completionBonus, "level", 1.25);
+      this.queueAudio("shieldGained");
     }
     return delta;
   }
@@ -168,33 +183,27 @@ export class SpaceGlowGame {
   }
 
   comboMultiplierForStreak(streak) {
-    return Math.min(
-      SETTINGS.scoring.maxStreakMultiplier,
-      1 + Math.max(0, streak - 1) * SETTINGS.scoring.streakMultiplierStep,
+    const base = Math.min(
+      SETTINGS.scoring.maxComboMultiplier,
+      1 + Math.max(0, streak - 1) * SETTINGS.scoring.comboStep,
     );
+    return base + (this.overdriveRemainingSeconds > 0 ? SETTINGS.scoring.overdriveMultiplierBonus : 0);
   }
 
   scoreForHit(quality, closeness, nextStreak) {
-    const centerBonus = Math.round(SETTINGS.scoring.centerBonusMax * closeness * closeness);
-    const qualityBonus =
-      quality === "bullseye"
-        ? SETTINGS.scoring.bullseyeBonus
-        : quality === "core"
-          ? SETTINGS.scoring.coreBonus
-          : quality === "solid"
-            ? SETTINGS.scoring.solidBonus
-            : 0;
-    const streakMultiplier = this.comboMultiplierForStreak(nextStreak);
-    let points = Math.round(
-      (SETTINGS.scoring.baseHit + centerBonus + qualityBonus) * streakMultiplier,
-    );
-    if (nextStreak % SETTINGS.scoring.streakBonusEvery === 0) {
-      points += SETTINGS.scoring.streakBonus;
+    const level = this.currentLevel();
+    const baseByQuality = SETTINGS.scoring.baseByQuality;
+    let base = baseByQuality[quality] ?? baseByQuality.graze;
+    if (quality === "graze" && level.grazeScoreMultiplier) {
+      base = Math.round(base * level.grazeScoreMultiplier);
     }
-    return { points, centerBonus, qualityBonus, streakMultiplier };
+    const streakMultiplier = this.comboMultiplierForStreak(nextStreak);
+    const goldMultiplier = this.trial?.goldTarget ? 2 : 1;
+    const points = Math.round(base * streakMultiplier * goldMultiplier);
+    return { points, base, streakMultiplier, goldMultiplier, closeness };
   }
 
-  setMoment(text, points = 0, quality = "solid", life = 1.1) {
+  setMoment(text, points = 0, quality = "hit", life = 1.1) {
     this.lastMoment = { text, points, quality, age: 0, life };
   }
 
@@ -213,15 +222,23 @@ export class SpaceGlowGame {
     this.practiceElapsed = 0;
     this.practiceHits = 0;
     this.bestBoom = 0;
+    this.bestComboMultiplier = 1;
+    this.bullseyes = 0;
+    this.overdriveRemainingSeconds = 0;
     this.maxShields = SETTINGS.shields.max;
     this.shields = this.maxShields;
     this.shieldsDepletedPending = false;
+    this.furthestLevelIndex = this.levelCursor;
     this.launch = null;
     this.trial = null;
     this.trail = [];
     this.feedback = [];
     this.explosion = null;
     this.lastMoment = null;
+    this.missGhost = null;
+    this.levelBanner = null;
+    this.bonusComet = null;
+    this.screenShake = { remaining: 0, duration: 0, intensity: 0 };
     this.lastTapGlobalTime = null;
     this.endReason = null;
     this.currentNode = vec(this.width * 0.38, this.height * 0.46);
@@ -237,11 +254,15 @@ export class SpaceGlowGame {
     this.streak = 0;
     this.bestStreak = 0;
     this.bestBoom = 0;
+    this.bestComboMultiplier = 1;
+    this.bullseyes = 0;
+    this.overdriveRemainingSeconds = 0;
     this.sessionElapsed = 0;
     this.summary = null;
     this.endReason = null;
     this.levelCursor = LEVEL_IDS.indexOf(this.selectedLevelId);
     if (this.levelCursor < 0) this.levelCursor = 0;
+    this.furthestLevelIndex = this.levelCursor;
     this.levelHits = 0;
     this.maxShields = SETTINGS.shields.max;
     this.shields = this.getStartingShieldsForLevel(this.currentLevel().id);
@@ -251,6 +272,14 @@ export class SpaceGlowGame {
     this.feedback = [];
     this.explosion = null;
     this.lastMoment = null;
+    this.missGhost = null;
+    this.levelBanner = {
+      text: `Level ${this.levelCursor + 1}: ${this.currentLevel().label}`,
+      age: 0,
+      life: 0.85,
+    };
+    this.bonusComet = null;
+    this.screenShake = { remaining: 0, duration: 0, intensity: 0 };
     this.lastTapGlobalTime = null;
     this.currentNode = vec(this.width * 0.38, this.height * 0.48);
     this.particleAngle = this.rng.range(0, TAU);
@@ -273,9 +302,13 @@ export class SpaceGlowGame {
     this.streak = 0;
     this.bestStreak = 0;
     this.bestBoom = 0;
+    this.bestComboMultiplier = 1;
+    this.bullseyes = 0;
+    this.overdriveRemainingSeconds = 0;
     this.maxShields = SETTINGS.shields.max;
     this.shields = 0;
     this.shieldsDepletedPending = false;
+    this.furthestLevelIndex = Math.max(0, LEVEL_IDS.indexOf(this.selectedLevelId));
     this.practiceElapsed = 0;
     this.practiceHits = 0;
     this.demoHits = 0;
@@ -295,6 +328,10 @@ export class SpaceGlowGame {
     this.feedback = [];
     this.explosion = null;
     this.lastMoment = null;
+    this.missGhost = null;
+    this.levelBanner = null;
+    this.bonusComet = null;
+    this.screenShake = { remaining: 0, duration: 0, intensity: 0 };
     this.stars = [];
     this.applyRules();
     this.createStars();
@@ -310,14 +347,27 @@ export class SpaceGlowGame {
       this.lastMoment = { ...this.lastMoment, age: this.lastMoment.age + step };
       if (this.lastMoment.age >= this.lastMoment.life) this.lastMoment = null;
     }
+    if (this.levelBanner) {
+      this.levelBanner = { ...this.levelBanner, age: this.levelBanner.age + step };
+      if (this.levelBanner.age >= this.levelBanner.life) this.levelBanner = null;
+    }
+    if (this.missGhost) {
+      this.missGhost = { ...this.missGhost, age: this.missGhost.age + step };
+      if (this.missGhost.age >= this.missGhost.life) this.missGhost = null;
+    }
+    if (this.screenShake.remaining > 0) {
+      this.screenShake = {
+        ...this.screenShake,
+        remaining: Math.max(0, this.screenShake.remaining - step),
+      };
+    }
+    if (this.overdriveRemainingSeconds > 0) {
+      this.overdriveRemainingSeconds = Math.max(0, this.overdriveRemainingSeconds - step);
+    }
     this.updateExplosion(step);
 
     if (this.mode === "levelComplete") {
-      this.sessionElapsed = Math.min(SETTINGS.sessionSeconds, this.sessionElapsed + step);
-      if (this.sessionElapsed >= SETTINGS.sessionSeconds) {
-        this.endSession("time-complete");
-        return;
-      }
+      this.sessionElapsed += step;
       this.levelCompleteElapsed += step;
       if (this.levelCompleteElapsed >= this.levelCompleteDuration) this.startNextLevel();
       return;
@@ -326,10 +376,9 @@ export class SpaceGlowGame {
     if (this.mode === "demo") this.demoElapsed += step;
 
     if (this.mode === "running") {
-      this.sessionElapsed = Math.min(SETTINGS.sessionSeconds, this.sessionElapsed + step);
-      if (this.sessionElapsed >= SETTINGS.sessionSeconds) {
-        this.endSession("time-complete");
-        return;
+      this.sessionElapsed += step;
+      if (this.bonusComet && this.sessionElapsed > this.bonusComet.expiresAt) {
+        this.bonusComet.active = false;
       }
     }
 
@@ -354,16 +403,6 @@ export class SpaceGlowGame {
     this.lastTapGlobalTime = this.globalElapsed;
 
     if (this.launch) {
-      let shieldDelta = 0;
-      if (
-        rapid &&
-        this.mode === "running" &&
-        this.shields > 1 &&
-        !this.launch.rapidPenaltyApplied
-      ) {
-        shieldDelta = this.loseShield("rapid-tap");
-        this.launch.rapidPenaltyApplied = true;
-      }
       this.logTap(inputKind, {
         rapid,
         rapidTap: rapid,
@@ -374,11 +413,10 @@ export class SpaceGlowGame {
         centerCloseness: 0,
         hitQuality: "extra",
         pointsAwarded: 0,
-        shieldDelta,
+        shieldDelta: 0,
         shieldsAfter: this.shields,
       });
-      this.queueAudio("rapid");
-      if (this.finishShieldCheck()) this.launch = null;
+      this.queueAudio("blocked");
       return;
     }
 
@@ -394,8 +432,11 @@ export class SpaceGlowGame {
     );
     const willHit = hitDistance !== null;
     const centerDistance = closestDistanceFromRayToPoint(origin, direction, this.targetNode);
-    const centerCloseness = willHit ? clamp(1 - centerDistance / this.gravityRadius, 0, 1) : 0;
+    const closenessRadius = this.trial?.goldTarget ? this.gravityRadius * 0.72 : this.gravityRadius;
+    const centerCloseness = willHit ? clamp(1 - centerDistance / closenessRadius, 0, 1) : 0;
     const hitQuality = willHit ? hitQualityForCloseness(centerCloseness) : "miss";
+    const timing = this.currentTimingSnapshot();
+    const bonusHit = this.findBonusCometHit(origin, direction, hitDistance);
     const scorePreview =
       willHit && this.mode === "running"
         ? this.scoreForHit(hitQuality, centerCloseness, this.streak + 1).points
@@ -430,9 +471,26 @@ export class SpaceGlowGame {
       particlePosition: clonePoint(origin),
       frozenTarget: clonePoint(this.targetNode),
       trialId: this.trial?.id ?? null,
+      timingDifferenceSeconds: timing.timingDifferenceSeconds,
+      timingDirection: timing.timingDirection,
+      bonusHit,
+      bonusAwarded: false,
       rapidPenaltyApplied: false,
     };
     this.queueAudio("launch");
+  }
+
+  currentTimingSnapshot() {
+    const ideal = idealLaunchAngle(this.currentNode, this.targetNode, this.orbitRadius);
+    const signedDelta = signedAngleDelta(this.particleAngle, ideal);
+    const timingDifference = signedDelta / this.angularSpeed;
+    const timingDirection =
+      Math.abs(timingDifference) < 0.035 ? "on-time" : timingDifference < 0 ? "early" : "late";
+    return {
+      idealLaunchAngleRadians: ideal,
+      timingDifferenceSeconds: timingDifference,
+      timingDirection,
+    };
   }
 
   logTap(inputKind, overrides) {
@@ -486,11 +544,21 @@ export class SpaceGlowGame {
     const maxDistance = this.launch.willHit
       ? this.launch.hitDistance
       : this.projectileSpeed * this.launch.duration;
+    const traveled = maxDistance * progress;
     this.launch.particlePosition = {
-      x: this.launch.origin.x + this.launch.direction.x * maxDistance * progress,
-      y: this.launch.origin.y + this.launch.direction.y * maxDistance * progress,
+      x: this.launch.origin.x + this.launch.direction.x * traveled,
+      y: this.launch.origin.y + this.launch.direction.y * traveled,
     };
     this.pushTrail(this.launch.particlePosition);
+
+    if (
+      this.launch.bonusHit &&
+      !this.launch.bonusAwarded &&
+      traveled >= this.launch.bonusHit.distance
+    ) {
+      this.awardBonusComet(this.launch.bonusHit);
+      this.launch.bonusAwarded = true;
+    }
 
     if (progress < 1) return;
 
@@ -502,11 +570,7 @@ export class SpaceGlowGame {
       this.particleAngle = this.angleFromNode(this.launch.particlePosition, this.currentNode);
       const quality = launch.hitQuality;
       const qualityLabel = hitQualityLabel(quality);
-      const hitPower = clamp(
-        0.45 + launch.centerCloseness * 1.8 + Math.min(this.streak, 20) * 0.025,
-        0.5,
-        2.6,
-      );
+      const hitPower = explosionPowerForQuality(quality);
 
       if (this.mode === "demo") {
         this.demoHits += 1;
@@ -514,6 +578,10 @@ export class SpaceGlowGame {
         this.score += 5;
         this.streak += 1;
         this.bestStreak = Math.max(this.bestStreak, this.streak);
+        this.bestComboMultiplier = Math.max(
+          this.bestComboMultiplier,
+          this.comboMultiplierForStreak(Math.max(1, this.streak)),
+        );
         this.bestBoom = Math.max(this.bestBoom, 5);
         this.addFeedback(quality, this.currentNode);
         this.explosion = createExplosion(this.rng, caughtPoint, this.getTargetColor(), hitPower);
@@ -533,10 +601,23 @@ export class SpaceGlowGame {
       const level = this.currentLevel();
       const nextStreak = this.streak + 1;
       const hitScore = this.scoreForHit(quality, launch.centerCloseness, nextStreak);
-      this.score += hitScore.points;
+      let points = hitScore.points;
+      let streakBonus = 0;
+      if (nextStreak % SETTINGS.scoring.streakBonusEvery === 0) {
+        streakBonus = SETTINGS.scoring.streakBonus;
+        points += streakBonus;
+        this.addFeedback("streak", caughtPoint, `STREAK +${streakBonus}`);
+        this.queueAudio("streakBonus");
+      }
+      this.score += points;
       this.streak = nextStreak;
       this.bestStreak = Math.max(this.bestStreak, this.streak);
-      this.bestBoom = Math.max(this.bestBoom, hitScore.points);
+      this.bestComboMultiplier = Math.max(
+        this.bestComboMultiplier,
+        this.comboMultiplierForStreak(Math.max(1, this.streak)),
+      );
+      this.bestBoom = Math.max(this.bestBoom, points);
+      if (quality === "bullseye") this.bullseyes += 1;
       this.levelHits += 1;
       const shieldGain =
         quality === "bullseye"
@@ -549,25 +630,31 @@ export class SpaceGlowGame {
         quality === "bullseye" ? "bullseye" : quality === "core" ? "core-hit" : "hit",
       );
       const levelComplete = this.levelHits >= level.successesToComplete;
-      const explosionPower = levelComplete
-        ? clamp(1.8 + launch.centerCloseness * 2.2, 2.0, 4.0)
-        : hitPower;
+      const explosionPower = levelComplete ? 4 : hitPower;
       this.explosion = createExplosion(this.rng, caughtPoint, this.getTargetColor(), explosionPower);
+      this.startShake(shakeForQuality(levelComplete ? "level" : quality));
       if (this.telemetry) {
         finishTrial(this.telemetry, trialId, "hit", this.sessionElapsed, caughtPoint, {
           hitQuality: quality,
           centerDistance: launch.centerDistance,
           centerCloseness: launch.centerCloseness,
-          pointsAwarded: hitScore.points,
+          pointsAwarded: points,
           shieldDelta,
           shieldsAfter: this.shields,
           targetMotionActive: Boolean(this.trial?.targetMotionPlan),
+          bonusCometHit: Boolean(launch.bonusAwarded),
+          goldTarget: Boolean(this.trial?.goldTarget),
         });
       }
       this.addFeedback(levelComplete ? "level" : quality, caughtPoint);
-      this.setMoment(`${qualityLabel} +${hitScore.points}`, hitScore.points, quality);
+      this.setMoment(`${qualityLabel} +${points}`, points, quality);
       this.queueAudio(audioForHitQuality(quality));
-      if (quality === "bullseye" || quality === "core") this.queueAudio("vibrateSoft");
+      if (nextStreak % SETTINGS.scoring.overdriveEvery === 0) {
+        this.overdriveRemainingSeconds = SETTINGS.scoring.overdriveSeconds;
+        this.addFeedback("overdrive", caughtPoint, "OVERDRIVE");
+        this.setMoment("OVERDRIVE", 0, "overdrive", 1.1);
+        this.queueAudio("overdriveStart");
+      }
       this.launch = null;
 
       if (levelComplete) {
@@ -592,7 +679,17 @@ export class SpaceGlowGame {
         targetMotionActive: Boolean(this.trial?.targetMotionPlan),
       });
     }
-    this.addFeedback("miss", this.launch.frozenTarget);
+    const missLabel = missLabelForLaunch(this.launch);
+    this.addFeedback("miss", this.launch.frozenTarget, missLabel);
+    this.setMoment(missLabel, 0, "miss", 0.9);
+    this.missGhost = {
+      start: clonePoint(this.launch.origin),
+      end: clonePoint(this.launch.particlePosition),
+      idealAngle: idealLaunchAngle(this.currentNode, this.launch.frozenTarget, this.orbitRadius),
+      age: 0,
+      life: 0.5,
+    };
+    this.startShake(shakeForQuality("miss"));
     this.queueAudio("miss");
     this.launch = null;
     if (this.finishShieldCheck()) return;
@@ -606,9 +703,11 @@ export class SpaceGlowGame {
     this.gainShield(SETTINGS.shields.levelClearGain, "level-clear");
     this.mode = "levelComplete";
     this.levelCompleteElapsed = 0;
-    this.explosion = createExplosion(this.rng, point, this.getTargetColor(), power);
-    this.queueAudio("levelComplete");
-    this.queueAudio("vibrateStrong");
+    this.explosion = createExplosion(this.rng, point, this.getTargetColor(), Math.max(4, power));
+    this.levelBanner = { text: "Planet Ignited", age: 0, life: 0.78 };
+    this.setMoment(`LEVEL CLEAR +${level.completionBonus}`, level.completionBonus, "level", 1);
+    this.startShake(shakeForQuality("level"));
+    this.queueAudio("levelClear");
   }
 
   startNextLevel() {
@@ -619,10 +718,18 @@ export class SpaceGlowGame {
     }
     this.mode = "running";
     this.levelHits = 0;
+    this.furthestLevelIndex = Math.max(this.furthestLevelIndex, this.levelCursor);
     this.launch = null;
     this.trail = [];
     this.feedback = [];
     this.explosion = null;
+    this.missGhost = null;
+    this.bonusComet = null;
+    this.levelBanner = {
+      text: `Level ${this.levelCursor + 1}: ${this.currentLevel().label}`,
+      age: 0,
+      life: 0.82,
+    };
     this.currentNode = vec(this.width * 0.38, this.height * 0.48);
     this.particleAngle = this.rng.range(0, TAU);
     this.applyRules();
@@ -637,6 +744,10 @@ export class SpaceGlowGame {
     this.targetNode = clonePoint(target);
     this.targetOriginalPosition = clonePoint(target);
     const targetMotionPlan = this.createTargetMotionPlan(target);
+    const goldTarget =
+      this.mode === "running" && Boolean(this.currentLevel().goldChance) && this.rng.chance(this.currentLevel().goldChance);
+    const bonusComet = this.createBonusComet(target);
+    this.bonusComet = bonusComet;
     const volatilityActive =
       this.mode === "running" && phase.id === "drift" && !targetMotionPlan;
     const driftPlan = volatilityActive
@@ -665,6 +776,8 @@ export class SpaceGlowGame {
       targetMotionActive: Boolean(targetMotionPlan),
       targetMotionPathStart: targetMotionPlan?.pathStart ? clonePoint(targetMotionPlan.pathStart) : null,
       targetMotionPathEnd: targetMotionPlan?.pathEnd ? clonePoint(targetMotionPlan.pathEnd) : null,
+      bonusComet,
+      goldTarget,
       targetStillDrifting: false,
     };
 
@@ -680,7 +793,9 @@ export class SpaceGlowGame {
     const angle = this.rng.range(0, TAU);
     const axis = { x: Math.cos(angle), y: Math.sin(angle) };
     const margin = Math.max(78, this.orbitRadius + this.gravityRadius + 12);
-    let amplitude = motionRules.amplitude * this.scale;
+    const minAmplitude = motionRules.amplitudeMin ?? motionRules.amplitude ?? 20;
+    const maxAmplitude = motionRules.amplitudeMax ?? motionRules.amplitude ?? minAmplitude;
+    let amplitude = this.rng.range(minAmplitude, maxAmplitude) * this.scale;
 
     while (amplitude > 4) {
       const pathStart = add(target, scale(axis, -amplitude));
@@ -711,6 +826,54 @@ export class SpaceGlowGame {
     }
 
     return null;
+  }
+
+  createBonusComet(target) {
+    const level = this.currentLevel();
+    const chance = level.bonusCometChance ?? 0;
+    if (this.mode !== "running" || chance <= 0 || !this.rng.chance(chance)) return null;
+
+    const axisAngle = this.rng.range(0, TAU);
+    const offsetDistance = this.rng.range(this.gravityRadius * 0.48, this.gravityRadius * 0.82);
+    const offset = { x: Math.cos(axisAngle) * offsetDistance, y: Math.sin(axisAngle) * offsetDistance };
+    const margin = 40;
+    const position = {
+      x: clamp(target.x + offset.x, margin, this.width - margin),
+      y: clamp(target.y + offset.y, margin, this.height - margin),
+    };
+    return {
+      active: true,
+      position,
+      radius: Math.max(9, 14 * this.scale),
+      createdAt: this.sessionElapsed,
+      expiresAt: this.sessionElapsed + 2.5,
+    };
+  }
+
+  findBonusCometHit(origin, direction, targetHitDistance) {
+    const comet = this.bonusComet;
+    if (!comet?.active || this.mode !== "running" || this.sessionElapsed > comet.expiresAt) return null;
+    const hitDistance = rayCircleIntersectionDistance(origin, direction, comet.position, comet.radius);
+    if (hitDistance === null) return null;
+    if (targetHitDistance !== null && hitDistance > targetHitDistance) return null;
+    return { ...comet, distance: hitDistance };
+  }
+
+  awardBonusComet(comet) {
+    if (!this.bonusComet?.active || this.mode !== "running") return;
+    this.bonusComet.active = false;
+    this.score += SETTINGS.scoring.bonusComet;
+    this.streak += 1;
+    this.bestStreak = Math.max(this.bestStreak, this.streak);
+    this.bestComboMultiplier = Math.max(
+      this.bestComboMultiplier,
+      this.comboMultiplierForStreak(Math.max(1, this.streak)),
+    );
+    this.bestBoom = Math.max(this.bestBoom, SETTINGS.scoring.bonusComet);
+    this.explosion = createExplosion(this.rng, comet.position, cometColor(), 0.75);
+    this.addFeedback("bonus", comet.position, `COMET +${SETTINGS.scoring.bonusComet}`);
+    this.setMoment(`COMET +${SETTINGS.scoring.bonusComet}`, SETTINGS.scoring.bonusComet, "bonus", 0.9);
+    this.queueAudio("bonus");
   }
 
   updateTargetMotion() {
@@ -785,13 +948,14 @@ export class SpaceGlowGame {
       .slice(-52);
   }
 
-  addFeedback(kind, point) {
+  addFeedback(kind, point, text = null) {
     this.feedback.push({
       kind,
+      text,
       x: point.x,
       y: point.y,
       age: 0,
-      life: kind === "level" ? 1.2 : kind === "miss" ? 0.55 : 0.42,
+      life: kind === "level" || kind === "overdrive" ? 0.95 : kind === "miss" ? 0.55 : 0.48,
     });
   }
 
@@ -805,6 +969,15 @@ export class SpaceGlowGame {
       vy: particle.vy + 18 * dt,
       age: particle.age + dt,
     }));
+  }
+
+  startShake({ duration, intensity }) {
+    if (duration <= 0 || intensity <= 0) return;
+    this.screenShake = {
+      remaining: duration,
+      duration,
+      intensity,
+    };
   }
 
   queueAudio(kind) {
@@ -829,6 +1002,10 @@ export class SpaceGlowGame {
       this.telemetry.finalScore = this.score;
       this.telemetry.finalShields = this.shields;
       this.telemetry.bestBoom = this.bestBoom;
+      this.telemetry.bestStreak = this.bestStreak;
+      this.telemetry.bestComboMultiplier = this.bestComboMultiplier;
+      this.telemetry.bullseyes = this.bullseyes;
+      this.telemetry.furthestLevelIndex = this.furthestLevelIndex;
     }
     this.queueAudio("end");
   }
@@ -862,7 +1039,10 @@ export class SpaceGlowGame {
     const direction = tangentDirection(ideal);
     const delta = signedAngleDelta(this.particleAngle, ideal);
     const timingDifference = delta / this.angularSpeed;
-    const windowSeconds = this.mode === "demo" ? 0.18 : 0.11;
+    const level = this.currentRules();
+    const windowSeconds = this.mode === "demo" ? 0.18 : (level.timingWindowSeconds ?? 0.11);
+    const flicker = Boolean(level.flickerWindow);
+    const flickerAlpha = flicker ? 0.58 + Math.sin(this.globalElapsed * 9.4) * 0.34 : 1;
     return {
       idealAngle: ideal,
       idealPoint,
@@ -875,6 +1055,8 @@ export class SpaceGlowGame {
       windowRadians: windowSeconds * this.angularSpeed,
       inWindow: Math.abs(timingDifference) <= windowSeconds,
       intensity: Math.max(0, 1 - Math.abs(timingDifference) / (windowSeconds * 3.2)),
+      flicker,
+      flickerAlpha: clamp(flickerAlpha, 0.22, 1),
     };
   }
 
@@ -908,6 +1090,15 @@ export class SpaceGlowGame {
       targetMotionPathEnd: this.trial?.targetMotionPathEnd
         ? clonePoint(this.trial.targetMotionPathEnd)
         : null,
+      bonusComet:
+        this.bonusComet?.active && this.mode === "running"
+          ? {
+              position: clonePoint(this.bonusComet.position),
+              radius: this.bonusComet.radius,
+              remainingSeconds: Math.max(0, this.bonusComet.expiresAt - this.sessionElapsed),
+            }
+          : null,
+      goldTarget: Boolean(this.trial?.goldTarget),
       particle,
       particleAngle: this.particleAngle,
       orbitRadius: this.orbitRadius,
@@ -924,7 +1115,11 @@ export class SpaceGlowGame {
       streak: this.streak,
       bestStreak: this.bestStreak,
       bestBoom: this.bestBoom,
+      bestComboMultiplier: this.bestComboMultiplier,
+      bullseyes: this.bullseyes,
       comboMultiplier: this.comboMultiplierForStreak(Math.max(1, this.streak)),
+      overdriveActive: this.overdriveRemainingSeconds > 0,
+      overdriveRemainingSeconds: this.overdriveRemainingSeconds,
       shields: this.shields,
       maxShields: this.maxShields,
       shieldPercent: this.maxShields ? this.shields / this.maxShields : 0,
@@ -936,6 +1131,7 @@ export class SpaceGlowGame {
       levelCount: LEVELS.length,
       levelHits: this.levelHits,
       levelTargetHits: level.successesToComplete,
+      furthestLevelIndex: this.furthestLevelIndex,
       demoHits: this.demoHits,
       demoTargetHits: DEMO_RULES.successesToComplete,
       targetStage: this.getTargetStage(),
@@ -949,6 +1145,9 @@ export class SpaceGlowGame {
       sessionRemaining: Math.max(0, SETTINGS.sessionSeconds - this.sessionElapsed),
       feedback: this.feedback,
       explosion: this.explosion,
+      missGhost: this.missGhost,
+      levelBanner: this.levelBanner ? { ...this.levelBanner } : null,
+      screenShake: { ...this.screenShake },
       endReason: this.endReason,
       debug: {
         enabled: this.debug,
@@ -977,7 +1176,11 @@ export class SpaceGlowGame {
       streak: this.streak,
       bestStreak: this.bestStreak,
       bestBoom: this.bestBoom,
+      bestComboMultiplier: this.bestComboMultiplier,
+      bullseyes: this.bullseyes,
       comboMultiplier: this.comboMultiplierForStreak(Math.max(1, this.streak)),
+      overdriveActive: this.overdriveRemainingSeconds > 0,
+      overdriveRemainingSeconds: this.overdriveRemainingSeconds,
       shields: this.shields,
       maxShields: this.maxShields,
       shieldPercent: this.maxShields ? this.shields / this.maxShields : 0,
@@ -990,6 +1193,7 @@ export class SpaceGlowGame {
       levelCount: LEVELS.length,
       levelHits: this.levelHits,
       levelTargetHits: level.successesToComplete,
+      furthestLevelIndex: this.furthestLevelIndex,
       demoHits: this.demoHits,
       demoTargetHits: DEMO_RULES.successesToComplete,
       sessionRemaining: Math.max(0, SETTINGS.sessionSeconds - this.sessionElapsed),
@@ -1008,15 +1212,15 @@ export class SpaceGlowGame {
 
 const HIT_QUALITY_LABELS = {
   bullseye: "BULLSEYE",
-  core: "CORE BOOM",
-  solid: "BOOM",
+  core: "CORE",
+  hit: "HIT",
   graze: "GRAZE",
 };
 
 function hitQualityForCloseness(centerCloseness) {
   if (centerCloseness >= 0.9) return "bullseye";
-  if (centerCloseness >= 0.68) return "core";
-  if (centerCloseness >= 0.38) return "solid";
+  if (centerCloseness >= 0.7) return "core";
+  if (centerCloseness >= 0.4) return "hit";
   return "graze";
 }
 
@@ -1025,10 +1229,39 @@ function hitQualityLabel(quality) {
 }
 
 function audioForHitQuality(quality) {
-  if (quality === "bullseye") return "hitBullseye";
-  if (quality === "core") return "hitCore";
-  if (quality === "solid") return "hitSolid";
-  return "hitGraze";
+  if (quality === "bullseye") return "bullseye";
+  if (quality === "core") return "core";
+  if (quality === "hit") return "hit";
+  return "graze";
+}
+
+function explosionPowerForQuality(quality) {
+  if (quality === "bullseye") return 2.8;
+  if (quality === "core") return 1.8;
+  if (quality === "hit") return 1;
+  return 0.6;
+}
+
+function shakeForQuality(quality) {
+  if (quality === "level") return { duration: 0.22, intensity: 9 };
+  if (quality === "bullseye") return { duration: 0.14, intensity: 6 };
+  if (quality === "core") return { duration: 0.08, intensity: 3.5 };
+  if (quality === "miss") return { duration: 0.04, intensity: 1.5 };
+  return { duration: 0, intensity: 0 };
+}
+
+function missLabelForLaunch(launch) {
+  const delta = launch.timingDifferenceSeconds ?? 0;
+  if (Math.abs(delta) < 0.055) return "JUST MISSED";
+  return delta < 0 ? "TOO EARLY" : "TOO LATE";
+}
+
+function cometColor() {
+  return {
+    core: "rgba(255,244,177,0.98)",
+    ring: "rgba(255,244,177,0.48)",
+    glow: "rgba(255,244,177,0.5)",
+  };
 }
 
 function createExplosion(rng, point, color, power = 1) {

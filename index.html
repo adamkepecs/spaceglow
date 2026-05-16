@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Space Glow</title>
-    <link rel="stylesheet" href="./styles.css?v=2026-05-15-gameplay" />
+    <link rel="stylesheet" href="./styles.css?v=2026-05-16-arcade" />
   </head>
   <body>
     <canvas id="gameCanvas" aria-label="Space Glow game canvas"></canvas>
@@ -20,7 +20,7 @@
         <strong id="hudCombo">x1.0</strong>
       </div>
       <div class="hud-cell">
-        <span class="hud-label">Shield</span>
+        <span class="hud-label">Shields</span>
         <strong id="hudShields">10/10</strong>
       </div>
       <div class="hud-cell">
@@ -35,22 +35,22 @@
 
     <main class="screen" id="startScreen">
       <section class="screen-content">
-        <p class="eyebrow">Arcade timing prototype</p>
+        <p class="eyebrow">Arcade run</p>
         <h1>Space Glow</h1>
-        <p class="lede">Time the release. Ignite the planet. Chain bigger booms.</p>
+        <p class="lede">Time the release. Ignite planets. Chain bigger booms.</p>
 
         <div class="level-picker" role="group" aria-label="Choose starting level">
           <button class="level-button is-active" data-level="easy" type="button" aria-pressed="true">
             <span>Easy</span>
-            <small>Wide field</small>
+            <small>Wide Orbit</small>
           </button>
           <button class="level-button" data-level="medium" type="button" aria-pressed="false">
             <span>Medium</span>
-            <small>Moving planets</small>
+            <small>Moving Planets</small>
           </button>
           <button class="level-button" data-level="difficult" type="button" aria-pressed="false">
             <span>Difficult</span>
-            <small>Fast + tight</small>
+            <small>Fast + Tight</small>
           </button>
         </div>
 
@@ -85,44 +85,36 @@
 
     <main class="screen" id="endScreen" hidden>
       <section class="screen-content">
-        <p class="eyebrow" id="endTitle">Run complete</p>
-        <h1 id="endScore">Score: 0</h1>
+        <p class="eyebrow" id="endTitle">Run Over</p>
+        <h1><span>Final Score</span><strong id="endScore">0</strong></h1>
         <dl class="results">
           <div>
-            <dt>Best boom</dt>
-            <dd id="endBestBoom">0</dd>
+            <dt>Best Combo</dt>
+            <dd id="endBestCombo">x1.0 · 0</dd>
           </div>
           <div>
-            <dt>Best streak</dt>
-            <dd id="endBestStreak">0</dd>
+            <dt>Bullseyes</dt>
+            <dd id="endBullseyes">0</dd>
           </div>
           <div>
             <dt>Accuracy</dt>
             <dd id="endAccuracy">0%</dd>
           </div>
           <div>
-            <dt>Shields</dt>
-            <dd id="endShields">0/10</dd>
-          </div>
-          <div>
-            <dt>Timing stability</dt>
-            <dd id="endStability">--</dd>
-          </div>
-          <div>
-            <dt>Return to rhythm</dt>
-            <dd id="endRecovery">--</dd>
+            <dt>Furthest Level</dt>
+            <dd id="endFurthestLevel">1/9</dd>
           </div>
         </dl>
         <div class="actions">
-          <button class="primary-button" id="restartButton" type="button">Play again</button>
+          <button class="primary-button" id="restartButton" type="button">Play Again</button>
           <button class="secondary-button" id="downloadButton" type="button">
-            Download session data
+            Download Data
           </button>
         </div>
       </section>
     </main>
 
     <pre class="debug-panel" id="debugPanel" hidden></pre>
-    <script type="module" src="./dist/web-main.js?v=2026-05-15-gameplay"></script>
+    <script type="module" src="./dist/web-main.js?v=2026-05-16-arcade"></script>
   </body>
 </html>

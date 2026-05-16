@@ -18,19 +18,23 @@ const hud = game.getHudState();
 assert.equal(hud.mode, "ended");
 assert.ok(data.tapEvents.length > 0);
 assert.ok(finished.some((trial) => trial.outcome === "hit"));
-assert.equal(data.settings.levels.length, 3);
+assert.ok(data.settings.levels.length >= 9);
 assert.equal(typeof data.summary.volatilityPenalty, "number");
 assert.ok(hud.maxShields >= 8);
 assert.ok(hud.shields >= 0);
 assert.ok(hud.shields <= hud.maxShields);
 assert.equal(typeof hud.comboMultiplier, "number");
 assert.ok(hud.score > 0);
+assert.equal(typeof hud.bestComboMultiplier, "number");
+assert.equal(typeof hud.bullseyes, "number");
+assert.ok(["all-levels-cleared", "shields-depleted"].includes(hud.endReason));
 
 const shieldGame = new SpaceGlowGame({ width: 900, height: 620, seed: "shield-test", debug: true });
 shieldGame.setLevel("difficult");
 shieldGame.startMeasured();
 
 const startingShields = shieldGame.getHudState().shields;
+assert.equal(startingShields, 8);
 let state = shieldGame.getRenderState();
 shieldGame.particleAngle = state.debug.idealLaunchAngle + Math.PI;
 shieldGame.tap("forced-miss");
@@ -45,6 +49,17 @@ finishLaunch(shieldGame);
 const afterHit = shieldGame.getHudState().shields;
 assert.ok(afterHit >= afterMiss);
 assert.ok(afterHit <= shieldGame.getHudState().maxShields);
+
+const rapidGame = new SpaceGlowGame({ width: 900, height: 620, seed: "rapid-test", debug: true });
+rapidGame.setLevel("easy");
+rapidGame.startMeasured();
+state = rapidGame.getRenderState();
+rapidGame.particleAngle = state.debug.idealLaunchAngle;
+rapidGame.tap("launch");
+const duringLaunchShields = rapidGame.getHudState().shields;
+rapidGame.tap("extra-rapid");
+assert.equal(rapidGame.getHudState().shields, duringLaunchShields);
+finishLaunch(rapidGame);
 
 const depletionGame = new SpaceGlowGame({ width: 900, height: 620, seed: "depletion-test", debug: true });
 depletionGame.setLevel("difficult");

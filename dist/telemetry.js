@@ -32,6 +32,9 @@ export function beginTrial(telemetry, trial) {
     targetOriginalPosition: roundPoint(trial.targetOriginalPosition),
     targetFinalPosition: roundPoint(trial.targetFinalPosition),
     targetMotionActive: Boolean(trial.targetMotionActive),
+    bonusCometActive: Boolean(trial.bonusComet?.active),
+    bonusCometPosition: trial.bonusComet?.active ? roundPoint(trial.bonusComet.position) : null,
+    goldTarget: Boolean(trial.goldTarget),
     outcome: "pending",
     trialDuration: null,
   });
@@ -101,6 +104,8 @@ export function finishTrial(telemetry, trialId, outcome, sessionTime, targetPosi
   row.pointsAwarded = details.pointsAwarded ?? 0;
   row.shieldDelta = details.shieldDelta ?? 0;
   row.shieldsAfter = details.shieldsAfter ?? null;
+  if (details.bonusCometHit !== undefined) row.bonusCometHit = Boolean(details.bonusCometHit);
+  if (details.goldTarget !== undefined) row.goldTarget = Boolean(details.goldTarget);
   if (details.targetMotionActive !== undefined) {
     row.targetMotionActive = Boolean(details.targetMotionActive);
   }

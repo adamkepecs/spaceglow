@@ -31,6 +31,7 @@ const game = new SpaceGlowGame({
 let audioContext = null;
 let lastTime = performance.now();
 let endScreenRendered = false;
+let lastHudScore = 0;
 
 function resize() {
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -56,41 +57,51 @@ function ensureAudio() {
 }
 
 function playSound(kind) {
-  if (kind === "vibrateStrong") {
-    if (navigator.vibrate) navigator.vibrate([55, 35, 95, 30, 140]);
-    return;
-  }
-  if (kind === "vibrateSoft") {
-    if (navigator.vibrate) navigator.vibrate(24);
-    return;
-  }
-
   const ac = ensureAudio();
   if (!ac) return;
 
   if (kind === "launch") {
     tone(ac, 320, 520, 0.09, 0, "sine", 0.035);
     tone(ac, 620, 840, 0.07, 0.035, "triangle", 0.018);
-  } else if (kind === "hitGraze") {
+  } else if (kind === "graze" || kind === "hitGraze") {
     tone(ac, 420, 520, 0.08, 0, "sine", 0.018);
-  } else if (kind === "hitSolid") {
+  } else if (kind === "hit" || kind === "hitSolid") {
     tone(ac, 560, 760, 0.14, 0, "sine", 0.034);
     tone(ac, 840, 1120, 0.14, 0.05, "sine", 0.022);
-  } else if (kind === "hitCore") {
+  } else if (kind === "core" || kind === "hitCore") {
+    if (navigator.vibrate) navigator.vibrate(35);
     tone(ac, 620, 920, 0.16, 0, "triangle", 0.04);
     tone(ac, 930, 1320, 0.18, 0.06, "sine", 0.03);
     tone(ac, 1480, 1760, 0.12, 0.14, "sine", 0.018);
-  } else if (kind === "hitBullseye") {
+  } else if (kind === "bullseye" || kind === "hitBullseye") {
+    if (navigator.vibrate) navigator.vibrate(50);
     tone(ac, 680, 980, 0.18, 0, "sine", 0.046);
     tone(ac, 1020, 1640, 0.22, 0.06, "triangle", 0.034);
     tone(ac, 1840, 2360, 0.16, 0.18, "sine", 0.022);
     noiseBurst(ac, 0.08, 0.008, 0.02);
   } else if (kind === "miss") {
+    if (navigator.vibrate) navigator.vibrate(20);
     tone(ac, 190, 92, 0.2, 0, "triangle", 0.035);
     noiseBurst(ac, 0.09, 0.012, 0.03);
-  } else if (kind === "rapid") {
-    tone(ac, 260, 180, 0.05, 0, "square", 0.016);
-  } else if (kind === "levelComplete") {
+  } else if (kind === "blocked" || kind === "rapid") {
+    tone(ac, 230, 180, 0.045, 0, "sine", 0.014);
+  } else if (kind === "shieldLost") {
+    tone(ac, 240, 140, 0.1, 0, "triangle", 0.024);
+  } else if (kind === "shieldGained") {
+    tone(ac, 520, 760, 0.1, 0, "sine", 0.02);
+    tone(ac, 760, 1040, 0.08, 0.06, "sine", 0.014);
+  } else if (kind === "streakBonus") {
+    tone(ac, 660, 990, 0.12, 0, "triangle", 0.032);
+    tone(ac, 990, 1320, 0.12, 0.08, "sine", 0.024);
+  } else if (kind === "overdriveStart") {
+    tone(ac, 220, 440, 0.18, 0, "sawtooth", 0.03);
+    tone(ac, 660, 1320, 0.22, 0.08, "triangle", 0.026);
+    noiseBurst(ac, 0.12, 0.012, 0.04);
+  } else if (kind === "bonus") {
+    tone(ac, 880, 1320, 0.09, 0, "sine", 0.024);
+    tone(ac, 1320, 1760, 0.08, 0.07, "sine", 0.018);
+  } else if (kind === "levelClear" || kind === "levelComplete") {
+    if (navigator.vibrate) navigator.vibrate(80);
     noiseBurst(ac, 0.26, 0.036, 0);
     tone(ac, 120, 58, 0.34, 0, "sawtooth", 0.035);
     tone(ac, 330, 660, 0.42, 0.07, "sine", 0.04);
@@ -165,10 +176,18 @@ function tick(now) {
 function draw(state) {
   const { width, height } = state;
   ctx.clearRect(0, 0, width, height);
+  ctx.save();
+  if (state.screenShake?.remaining > 0) {
+    const progress = state.screenShake.remaining / Math.max(0.001, state.screenShake.duration);
+    const intensity = state.screenShake.intensity * progress;
+    const t = performance.now() * 0.09;
+    ctx.translate(Math.sin(t) * intensity, Math.cos(t * 1.37) * intensity);
+  }
   drawBackground(state);
 
   if (state.mode === "start" || state.mode === "ended") {
     drawAmbientNodes(state);
+    ctx.restore();
     return;
   }
 
@@ -176,15 +195,19 @@ function draw(state) {
   if (state.mode !== "levelComplete") {
     drawTimingCues(state);
     drawTarget(state);
+    drawBonusComet(state);
   }
   drawTrail(state);
+  drawMissGhost(state);
   if (state.mode !== "levelComplete") {
     drawTether(state);
     drawParticle(state);
   }
   drawFeedback(state);
   drawExplosion(state);
+  drawLevelBanner(state);
   if (state.debug.enabled) drawDebugGeometry(state);
+  ctx.restore();
 }
 
 function drawBackground(state) {
@@ -195,6 +218,11 @@ function drawBackground(state) {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, state.width, state.height);
 
+  const t = performance.now() * 0.00025;
+  drawNebula(state.width * 0.18, state.height * 0.28, state.width * 0.46, `rgba(115,247,255,${0.045 + Math.sin(t) * 0.01})`);
+  drawNebula(state.width * 0.82, state.height * 0.72, state.width * 0.38, `rgba(255,156,72,${0.035 + Math.cos(t * 1.2) * 0.008})`);
+  drawNebula(state.width * 0.54, state.height * 0.42, state.width * 0.3, `rgba(151,255,210,${0.026 + Math.sin(t * 1.7) * 0.006})`);
+
   for (const star of state.stars) {
     const pulse = 0.55 + Math.sin(performance.now() * 0.001 * star.pulse) * 0.25;
     ctx.globalAlpha = star.alpha * pulse;
@@ -204,6 +232,16 @@ function drawBackground(state) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+}
+
+function drawNebula(x, y, radius, color) {
+  const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  gradient.addColorStop(0, color);
+  gradient.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawAmbientNodes(state) {
@@ -239,15 +277,18 @@ function drawOrbit(state) {
 function drawTimingCues(state) {
   if (!state.showTimingCues || state.launchActive) return;
   const cue = state.timingCue;
-  const alpha = state.mode === "demo" ? 0.92 : 0.58;
-  const arcAlpha = Math.max(0.22, cue.intensity * alpha);
+  const approachPulse = 0.68 + cue.intensity * 0.52 + Math.sin(performance.now() * 0.01) * 0.08;
+  const alpha = (state.mode === "demo" ? 0.96 : 0.82) * (cue.flickerAlpha ?? 1);
+  const arcAlpha = Math.max(0.34, cue.intensity * alpha);
 
   ctx.save();
   ctx.lineCap = "round";
   ctx.strokeStyle = cue.inWindow
-    ? `rgba(255,244,177,${arcAlpha})`
-    : `rgba(255,244,177,${arcAlpha * 0.48})`;
-  ctx.lineWidth = cue.inWindow ? 5 : 3;
+    ? `rgba(255,244,177,${Math.min(1, arcAlpha + 0.18)})`
+    : `rgba(255,201,111,${arcAlpha * approachPulse})`;
+  ctx.shadowColor = "rgba(255,244,177,0.7)";
+  ctx.shadowBlur = cue.inWindow ? 18 : 8 + cue.intensity * 14;
+  ctx.lineWidth = cue.inWindow ? 6.5 : 4.2;
   ctx.beginPath();
   ctx.arc(
     state.currentNode.x,
@@ -257,9 +298,10 @@ function drawTimingCues(state) {
     cue.idealAngle + cue.windowRadians,
   );
   ctx.stroke();
+  ctx.shadowBlur = 0;
 
   ctx.setLineDash([8, 10]);
-  ctx.strokeStyle = cue.inWindow ? "rgba(255,244,177,0.76)" : "rgba(238,247,255,0.22)";
+  ctx.strokeStyle = cue.inWindow ? "rgba(255,244,177,0.82)" : "rgba(238,247,255,0.2)";
   ctx.lineWidth = cue.inWindow ? 1.8 : 1.2;
   ctx.beginPath();
   ctx.moveTo(cue.idealPoint.x, cue.idealPoint.y);
@@ -267,7 +309,21 @@ function drawTimingCues(state) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  glowCircle(cue.idealPoint.x, cue.idealPoint.y, cue.inWindow ? 6 : 4, "rgba(255,244,177,0.96)", 18);
+  glowCircle(cue.idealPoint.x, cue.idealPoint.y, cue.inWindow ? 7 : 4.5, "rgba(255,244,177,0.96)", cue.inWindow ? 26 : 18);
+  if (state.missGhost) {
+    const missProgress = state.missGhost.age / state.missGhost.life;
+    ctx.strokeStyle = `rgba(255,244,177,${0.42 * (1 - missProgress)})`;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(
+      state.currentNode.x,
+      state.currentNode.y,
+      state.orbitRadius + 13 + missProgress * 12,
+      cue.idealAngle - cue.windowRadians,
+      cue.idealAngle + cue.windowRadians,
+    );
+    ctx.stroke();
+  }
   if (state.mode === "demo" && cue.inWindow) {
     ctx.font = "700 12px Inter, system-ui, sans-serif";
     ctx.fillStyle = "rgba(255,244,177,0.92)";
@@ -305,29 +361,69 @@ function drawTarget(state) {
   }
 
   const pulse = 1 + Math.sin(performance.now() * 0.004) * 0.045;
-  ring(state.targetNode.x, state.targetNode.y, state.gravityRadius, "rgba(255,255,255,0.12)", 1.2);
-  ring(state.targetNode.x, state.targetNode.y, state.gravityRadius * 0.72, color.ring, 1.1);
-  glowCircle(
-    state.targetNode.x,
-    state.targetNode.y,
-    state.targetRadius * 0.52 * pulse,
-    color.core,
-    state.mode === "demo" ? 72 : 48,
-  );
-  ring(
+  const swirl = performance.now() * 0.0011;
+  const atmosphere = state.goldTarget ? "rgba(255,244,177,0.74)" : color.ring;
+  ring(state.targetNode.x, state.targetNode.y, state.gravityRadius, "rgba(255,255,255,0.14)", 1.35);
+  ring(state.targetNode.x, state.targetNode.y, state.gravityRadius * 0.72, atmosphere, 1.25);
+
+  ctx.save();
+  ctx.shadowColor = state.goldTarget ? "rgba(255,244,177,0.78)" : color.glow;
+  ctx.shadowBlur = state.mode === "demo" ? 78 : 54;
+  const planet = ctx.createRadialGradient(
+    state.targetNode.x - state.targetRadius * 0.22,
+    state.targetNode.y - state.targetRadius * 0.28,
+    0,
     state.targetNode.x,
     state.targetNode.y,
     state.targetRadius * pulse,
-    state.targetStillDrifting ? "rgba(255,201,111,0.72)" : color.ring,
-    1.6,
   );
+  planet.addColorStop(0, "rgba(255,255,255,0.96)");
+  planet.addColorStop(0.32, state.goldTarget ? "rgba(255,244,177,0.98)" : color.core);
+  planet.addColorStop(0.72, state.goldTarget ? "rgba(255,201,111,0.88)" : color.ring);
+  planet.addColorStop(1, "rgba(4,8,15,0.12)");
+  ctx.fillStyle = planet;
+  ctx.beginPath();
+  ctx.arc(state.targetNode.x, state.targetNode.y, state.targetRadius * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.globalAlpha = 0.38;
+  ctx.strokeStyle = state.goldTarget ? "rgba(255,255,255,0.78)" : "rgba(238,247,255,0.38)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(
+    state.targetNode.x,
+    state.targetNode.y,
+    state.targetRadius * 0.86,
+    state.targetRadius * 0.34,
+    swirl,
+    0,
+    Math.PI * 2,
+  );
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
   ring(
     state.targetNode.x,
     state.targetNode.y,
-    Math.max(8, state.targetRadius * 0.24),
-    "rgba(4,8,15,0.46)",
-    1,
+    state.targetRadius * 1.08 * pulse,
+    state.targetStillDrifting ? "rgba(255,201,111,0.76)" : atmosphere,
+    state.goldTarget ? 2.4 : 1.7,
   );
+  ring(state.targetNode.x, state.targetNode.y, Math.max(8, state.targetRadius * 0.24), "rgba(4,8,15,0.42)", 1);
+}
+
+function drawBonusComet(state) {
+  if (!state.bonusComet) return;
+  const comet = state.bonusComet;
+  const pulse = 1 + Math.sin(performance.now() * 0.012) * 0.1;
+  const alpha = Math.min(1, comet.remainingSeconds / 0.55);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ring(comet.position.x, comet.position.y, comet.radius * 1.6 * pulse, "rgba(255,244,177,0.28)", 1.2);
+  glowCircle(comet.position.x, comet.position.y, comet.radius * pulse, "rgba(255,244,177,0.92)", 28);
+  glowCircle(comet.position.x, comet.position.y, comet.radius * 0.38, "rgba(255,255,255,0.98)", 12);
+  ctx.restore();
 }
 
 function drawTrail(state) {
@@ -335,9 +431,11 @@ function drawTrail(state) {
   for (let i = 1; i < state.trail.length; i += 1) {
     const a = state.trail[i - 1];
     const b = state.trail[i];
-    const alpha = Math.max(0, 0.44 - b.age * 0.42);
-    ctx.strokeStyle = `rgba(151,255,210,${alpha})`;
-    ctx.lineWidth = Math.max(1, 6 * (1 - i / state.trail.length));
+    const alpha = Math.max(0, (state.launchActive ? 0.68 : 0.46) - b.age * 0.5);
+    const color = state.overdriveActive ? "255,244,177" : state.launchActive ? "238,247,255" : "151,255,210";
+    ctx.strokeStyle = `rgba(${color},${alpha})`;
+    ctx.lineWidth = Math.max(1, (state.launchActive ? 8 : 6) * (1 - i / state.trail.length));
+    ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
@@ -356,9 +454,12 @@ function drawTether(state) {
 }
 
 function drawParticle(state) {
-  const size = Math.max(6.6, 8.5 * state.width / Math.max(state.width, 900));
-  glowCircle(state.particle.x, state.particle.y, size, "rgba(238,247,255,1)", 24);
-  glowCircle(state.particle.x, state.particle.y, 4.5, "rgba(255,255,255,1)", 10);
+  const cueBoost = state.timingCue?.inWindow ? 1.24 : 1;
+  const driveBoost = state.overdriveActive ? 1.22 : 1;
+  const size = Math.max(6.6, 8.5 * state.width / Math.max(state.width, 900)) * cueBoost * driveBoost;
+  const color = state.timingCue?.inWindow || state.overdriveActive ? "rgba(255,244,177,1)" : "rgba(238,247,255,1)";
+  glowCircle(state.particle.x, state.particle.y, size, color, state.overdriveActive ? 38 : 24);
+  glowCircle(state.particle.x, state.particle.y, 4.5 * cueBoost, "rgba(255,255,255,1)", 12);
 }
 
 function drawFeedback(state) {
@@ -368,26 +469,49 @@ function drawFeedback(state) {
     ctx.fillStyle =
       item.kind === "miss"
         ? "#ff9ab0"
-        : item.kind === "level" || item.kind === "bullseye"
+        : item.kind === "level" || item.kind === "bullseye" || item.kind === "overdrive"
           ? "#fff4b1"
-          : item.kind === "core"
-            ? "#ffc96f"
-            : "#b9ffe1";
-    ctx.font = "700 12px Inter, system-ui, sans-serif";
+        : item.kind === "core"
+          ? "#ffc96f"
+          : item.kind === "bonus" || item.kind === "streak"
+            ? "#ffe87e"
+          : "#b9ffe1";
+    const size = item.kind === "overdrive" || item.kind === "bullseye" ? 17 : item.kind === "level" ? 15 : 12;
+    ctx.font = `800 ${size}px Inter, system-ui, sans-serif`;
     ctx.textAlign = "center";
     const labels = {
-      miss: "MISS",
-      level: "LEVEL CLEAR",
+      miss: "JUST MISSED",
+      level: "PLANET IGNITED",
       bullseye: "BULLSEYE",
-      core: "CORE BOOM",
-      solid: "BOOM",
+      core: "CORE",
+      hit: "HIT",
       graze: "GRAZE",
+      streak: "STREAK +100",
+      bonus: "COMET +150",
+      overdrive: "OVERDRIVE",
       catch: "CATCH",
     };
-    const label = labels[item.kind] ?? "BOOM";
+    const label = item.text ?? labels[item.kind] ?? "HIT";
     ctx.fillText(label, item.x, item.y - 26 - progress * 18);
     ctx.globalAlpha = 1;
   }
+}
+
+function drawMissGhost(state) {
+  if (!state.missGhost) return;
+  const ghost = state.missGhost;
+  const progress = ghost.age / ghost.life;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - progress);
+  ctx.strokeStyle = "rgba(255,154,176,0.38)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([9, 10]);
+  ctx.beginPath();
+  ctx.moveTo(ghost.start.x, ghost.start.y);
+  ctx.lineTo(ghost.end.x, ghost.end.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 function drawExplosion(state) {
@@ -396,6 +520,13 @@ function drawExplosion(state) {
   const power = explosion.power ?? 1;
   const shock = Math.min(1, explosion.age / (0.55 + power * 0.08));
   const shockRadius = 28 + shock * Math.max(120, state.gravityRadius * (1.2 + power));
+  if (power >= 2.6) {
+    ctx.save();
+    const flashAlpha = Math.max(0, 0.2 * (1 - explosion.age / 0.18));
+    ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`;
+    ctx.fillRect(0, 0, state.width, state.height);
+    ctx.restore();
+  }
   ring(
     explosion.x,
     explosion.y,
@@ -417,6 +548,22 @@ function drawExplosion(state) {
     );
   }
   ctx.globalAlpha = 1;
+}
+
+function drawLevelBanner(state) {
+  if (!state.levelBanner) return;
+  const banner = state.levelBanner;
+  const progress = banner.age / banner.life;
+  const alpha = Math.sin(Math.min(1, progress) * Math.PI);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff4b1";
+  ctx.font = "800 22px Inter, system-ui, sans-serif";
+  ctx.shadowColor = "rgba(255,244,177,0.5)";
+  ctx.shadowBlur = 20;
+  ctx.fillText(banner.text, state.width / 2, state.height * 0.28);
+  ctx.restore();
 }
 
 function drawDebugGeometry(state) {
@@ -455,11 +602,20 @@ function syncUi(hudState, renderState) {
   endScreen.hidden = hudState.mode !== "ended";
   guidancePanel.hidden = hudState.mode !== "demo";
 
-  document.querySelector("#hudScore").textContent = String(hudState.score);
+  const scoreEl = document.querySelector("#hudScore");
+  if (hudState.score !== lastHudScore) {
+    scoreEl.classList.remove("score-pop");
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add("score-pop");
+    lastHudScore = hudState.score;
+  }
+  scoreEl.textContent = String(hudState.score);
   document.querySelector("#hudCombo").textContent =
     `x${hudState.comboMultiplier.toFixed(1)} · ${hudState.streak}`;
-  document.querySelector("#hudShields").textContent =
-    hudState.mode === "demo" ? "Demo" : `${hudState.shields}/${hudState.maxShields}`;
+  document.querySelector("#hudShields").innerHTML = renderShieldIcons(
+    hudState.mode === "demo" ? hudState.maxShields : hudState.shields,
+    hudState.maxShields,
+  );
   document.querySelector("#hudLevel").textContent =
     hudState.mode === "demo" ? "Demo" : `${hudState.levelIndex + 1}/${hudState.levelCount}`;
   document.querySelector("#hudProgress").textContent =
@@ -476,18 +632,21 @@ function syncUi(hudState, renderState) {
 
   if (hudState.mode === "ended" && !endScreenRendered) {
     endScreenRendered = true;
-    const summary = hudState.summary;
-    document.querySelector("#endTitle").textContent =
-      hudState.endReason === "shields-depleted" ? "Shields depleted" : "Run complete";
-    document.querySelector("#endScore").textContent = `Score: ${hudState.score}`;
-    document.querySelector("#endBestBoom").textContent = String(hudState.bestBoom);
-    document.querySelector("#endBestStreak").textContent = String(hudState.bestStreak);
+    const cleared = hudState.endReason === "all-levels-cleared";
+    const strongRun = hudState.bestStreak >= 10;
+    document.querySelector("#endTitle").textContent = cleared
+      ? "Galaxy Cleared"
+      : hudState.endReason === "shields-depleted"
+        ? "Shields Depleted"
+        : strongRun
+          ? "New Best Streak"
+          : "Run Over";
+    document.querySelector("#endScore").textContent = String(hudState.score);
+    document.querySelector("#endBestCombo").textContent = `x${hudState.bestComboMultiplier.toFixed(1)} · ${hudState.bestStreak}`;
+    document.querySelector("#endBullseyes").textContent = String(hudState.bullseyes);
     document.querySelector("#endAccuracy").textContent = `${hudState.accuracy}%`;
-    document.querySelector("#endShields").textContent = `${hudState.shields}/${hudState.maxShields}`;
-    document.querySelector("#endStability").textContent =
-      summary?.playerFacing?.timingStability ?? "--";
-    document.querySelector("#endRecovery").textContent =
-      summary?.playerFacing?.rhythmRecovery ?? "--";
+    document.querySelector("#endFurthestLevel").textContent =
+      `${Math.min(hudState.furthestLevelIndex + 1, hudState.levelCount)}/${hudState.levelCount}`;
   }
 
   const showDebug = renderState.debug.enabled && !["start", "ended"].includes(renderState.mode);
@@ -508,6 +667,14 @@ function syncUi(hudState, renderState) {
       `score/streak: ${renderState.score}/${renderState.streak}`,
     ].join("\n");
   }
+}
+
+function renderShieldIcons(shields, maxShields) {
+  const clamped = Math.max(0, Math.min(maxShields, Math.round(shields)));
+  return Array.from({ length: maxShields }, (_, index) => {
+    const filled = index < clamped;
+    return `<span class="shield-icon${filled ? " is-filled" : ""}" aria-hidden="true"></span>`;
+  }).join("");
 }
 
 function updateGuidance(hudState, renderState) {
@@ -601,7 +768,8 @@ closeHelpButton.addEventListener("click", () => helpDialog.close());
 restartButton.addEventListener("click", () => {
   endScreenRendered = false;
   game.restart();
-  startPlay();
+  ensureAudio();
+  game.startMeasured();
 });
 downloadButton.addEventListener("click", downloadSessionData);
 
