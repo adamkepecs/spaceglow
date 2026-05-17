@@ -25,6 +25,8 @@ export function beginTrial(telemetry, trial) {
     id: trial.id,
     trialStartTime: round(trial.startTime),
     phase: trial.phase,
+    waveNumber: trial.waveNumber ?? null,
+    loopIndex: trial.loopIndex ?? null,
     currentNode: roundPoint(trial.currentNode),
     targetNode: roundPoint(trial.targetNode),
     volatilityActive: trial.volatilityActive,
@@ -106,6 +108,7 @@ export function finishTrial(telemetry, trialId, outcome, sessionTime, targetPosi
   row.shieldsAfter = details.shieldsAfter ?? null;
   if (details.bonusCometHit !== undefined) row.bonusCometHit = Boolean(details.bonusCometHit);
   if (details.goldTarget !== undefined) row.goldTarget = Boolean(details.goldTarget);
+  if (details.clutchSave !== undefined) row.clutchSave = Boolean(details.clutchSave);
   if (details.targetMotionActive !== undefined) {
     row.targetMotionActive = Boolean(details.targetMotionActive);
   }

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Space Glow</title>
-    <link rel="stylesheet" href="./styles.css?v=2026-05-16-arcade" />
+    <link rel="stylesheet" href="./styles.css?v=2026-05-17-survival" />
   </head>
   <body>
     <canvas id="gameCanvas" aria-label="Space Glow game canvas"></canvas>
@@ -24,42 +24,49 @@
         <strong id="hudShields">10/10</strong>
       </div>
       <div class="hud-cell">
-        <span class="hud-label">Level</span>
+        <span class="hud-label">Wave</span>
         <strong id="hudLevel">1/3</strong>
       </div>
       <div class="hud-cell">
         <span class="hud-label">Target</span>
         <strong id="hudProgress">1/4</strong>
       </div>
+      <div class="hud-cell hud-best-cell">
+        <span class="hud-label">Best</span>
+        <strong id="hudBest">--</strong>
+      </div>
     </header>
 
     <main class="screen" id="startScreen">
       <section class="screen-content">
-        <p class="eyebrow">Arcade run</p>
+        <p class="eyebrow">Arcade survival</p>
         <h1>Space Glow</h1>
-        <p class="lede">Time the release. Ignite planets. Chain bigger booms.</p>
+        <p class="lede">Tap when the glow hits the gold arc.</p>
 
-        <div class="level-picker" role="group" aria-label="Choose starting level">
-          <button class="level-button is-active" data-level="easy" type="button" aria-pressed="true">
-            <span>Easy</span>
-            <small>Wide Orbit</small>
-          </button>
-          <button class="level-button" data-level="medium" type="button" aria-pressed="false">
-            <span>Medium</span>
-            <small>Moving Planets</small>
-          </button>
-          <button class="level-button" data-level="difficult" type="button" aria-pressed="false">
-            <span>Difficult</span>
-            <small>Fast + Tight</small>
-          </button>
+        <div class="secondary-panel" id="secondaryPanel" hidden>
+          <p class="panel-label">Start after your first run</p>
+          <div class="level-picker" role="group" aria-label="Choose starting level">
+            <button class="level-button is-active" data-level="easy" type="button" aria-pressed="true">
+              <span>Easy</span>
+              <small>Wide Orbit</small>
+            </button>
+            <button class="level-button" data-level="medium" type="button" aria-pressed="false">
+              <span>Medium</span>
+              <small>Moving Planets</small>
+            </button>
+            <button class="level-button" data-level="difficult" type="button" aria-pressed="false">
+              <span>Difficult</span>
+              <small>Fast + Tight</small>
+            </button>
+          </div>
         </div>
 
         <div class="actions">
-          <button class="primary-button" id="playButton" type="button">Play</button>
-          <button class="secondary-button" id="demoButton" type="button">Demo</button>
+          <button class="primary-button tap-button" id="playButton" type="button">Tap to Play</button>
+          <button class="secondary-button" id="demoButton" type="button" hidden>Demo</button>
           <button class="secondary-button" id="helpButton" type="button">Help</button>
         </div>
-        <p class="start-note" id="firstRunNote">First play opens a guided demo, then starts your run.</p>
+        <p class="start-note" id="firstRunNote">First run starts on Easy.</p>
       </section>
     </main>
 
@@ -78,6 +85,7 @@
         </p>
         <p>
           Hits refill shields; misses drain them. Clear the red target to start the next orbit.
+          Ten-hit chains trigger Supernova.
         </p>
         <button class="primary-button" id="closeHelpButton" type="button">Got it</button>
       </section>
@@ -87,27 +95,34 @@
       <section class="screen-content">
         <p class="eyebrow" id="endTitle">Run Over</p>
         <h1><span>Final Score</span><strong id="endScore">0</strong></h1>
+        <p class="end-grade" id="endGrade">D Grade</p>
+        <p class="best-delta" id="endBestDelta">First run logged.</p>
         <dl class="results">
           <div>
-            <dt>Best Combo</dt>
-            <dd id="endBestCombo">x1.0 · 0</dd>
+            <dt>Longest Chain</dt>
+            <dd id="endBestCombo">0</dd>
           </div>
           <div>
             <dt>Bullseyes</dt>
             <dd id="endBullseyes">0</dd>
           </div>
           <div>
+            <dt>Clutch Saves</dt>
+            <dd id="endClutchSaves">0</dd>
+          </div>
+          <div>
             <dt>Accuracy</dt>
             <dd id="endAccuracy">0%</dd>
           </div>
           <div>
-            <dt>Furthest Level</dt>
-            <dd id="endFurthestLevel">1/9</dd>
+            <dt>Furthest Wave</dt>
+            <dd id="endFurthestLevel">Wave 1</dd>
           </div>
         </dl>
         <div class="actions">
           <button class="primary-button" id="restartButton" type="button">Play Again</button>
-          <button class="secondary-button" id="downloadButton" type="button">
+          <button class="secondary-button" id="harderButton" type="button">Harder Run</button>
+          <button class="secondary-button" id="downloadButton" type="button" hidden>
             Download Data
           </button>
         </div>
@@ -115,6 +130,6 @@
     </main>
 
     <pre class="debug-panel" id="debugPanel" hidden></pre>
-    <script type="module" src="./dist/web-main.js?v=2026-05-16-arcade"></script>
+    <script type="module" src="./dist/web-main.js?v=2026-05-17-survival"></script>
   </body>
 </html>

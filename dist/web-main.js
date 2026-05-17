@@ -13,11 +13,14 @@ const closeHelpButton = document.querySelector("#closeHelpButton");
 const helpDialog = document.querySelector("#helpDialog");
 const restartButton = document.querySelector("#restartButton");
 const downloadButton = document.querySelector("#downloadButton");
+const harderButton = document.querySelector("#harderButton");
 const guidancePanel = document.querySelector("#guidancePanel");
 const guidanceTitle = document.querySelector("#guidanceTitle");
 const guidanceBody = document.querySelector("#guidanceBody");
+const secondaryPanel = document.querySelector("#secondaryPanel");
 const levelButtons = Array.from(document.querySelectorAll(".level-button"));
-const demoSeenKey = "space-glow-demo-seen-v2";
+const bestKey = "space-glow-best-v1";
+const runsKey = "space-glow-runs-v1";
 
 const params = new URLSearchParams(window.location.search);
 const game = new SpaceGlowGame({
@@ -60,7 +63,10 @@ function playSound(kind) {
   const ac = ensureAudio();
   if (!ac) return;
 
-  if (kind === "launch") {
+  if (kind.startsWith("hit:")) {
+    const [, quality = "hit", streakText = "1", supernovaText = "0"] = kind.split(":");
+    playHitSound(ac, quality, Number(streakText) || 1, supernovaText === "1");
+  } else if (kind === "launch") {
     tone(ac, 320, 520, 0.09, 0, "sine", 0.035);
     tone(ac, 620, 840, 0.07, 0.035, "triangle", 0.018);
   } else if (kind === "graze" || kind === "hitGraze") {
@@ -90,12 +96,27 @@ function playSound(kind) {
   } else if (kind === "shieldGained") {
     tone(ac, 520, 760, 0.1, 0, "sine", 0.02);
     tone(ac, 760, 1040, 0.08, 0.06, "sine", 0.014);
+  } else if (kind === "lastShield") {
+    if (navigator.vibrate) navigator.vibrate([42, 45, 42]);
+    tone(ac, 122, 82, 0.18, 0, "sine", 0.035);
+    tone(ac, 244, 180, 0.16, 0.08, "triangle", 0.022);
+  } else if (kind === "heartbeat") {
+    tone(ac, 95, 70, 0.1, 0, "sine", 0.03);
+    tone(ac, 88, 62, 0.12, 0.16, "sine", 0.022);
+  } else if (kind === "clutchSave") {
+    if (navigator.vibrate) navigator.vibrate([55, 28, 70]);
+    tone(ac, 86, 46, 0.2, 0, "sine", 0.05);
+    tone(ac, 520, 920, 0.2, 0.04, "triangle", 0.038);
+    noiseBurst(ac, 0.08, 0.018, 0);
+  } else if (kind === "chain") {
+    tone(ac, 520, 740, 0.1, 0, "sine", 0.022);
   } else if (kind === "streakBonus") {
     tone(ac, 660, 990, 0.12, 0, "triangle", 0.032);
     tone(ac, 990, 1320, 0.12, 0.08, "sine", 0.024);
-  } else if (kind === "overdriveStart") {
+  } else if (kind === "supernovaStart" || kind === "overdriveStart") {
     tone(ac, 220, 440, 0.18, 0, "sawtooth", 0.03);
     tone(ac, 660, 1320, 0.22, 0.08, "triangle", 0.026);
+    tone(ac, 1320, 2200, 0.34, 0.2, "sine", 0.03);
     noiseBurst(ac, 0.12, 0.012, 0.04);
   } else if (kind === "bonus") {
     tone(ac, 880, 1320, 0.09, 0, "sine", 0.024);
@@ -119,6 +140,27 @@ function playSound(kind) {
     tone(ac, 294, 392, 0.22, 0, "sine", 0.03);
     tone(ac, 392, 587, 0.28, 0.16, "sine", 0.024);
     tone(ac, 587, 880, 0.34, 0.34, "triangle", 0.02);
+  }
+}
+
+function playHitSound(ac, quality, streak, supernova) {
+  const pitch = Math.min(1.55, 1 + streak * 0.018 + (supernova ? 0.16 : 0));
+  if (quality === "graze") {
+    tone(ac, 420 * pitch, 520 * pitch, 0.08, 0, "sine", 0.018);
+  } else if (quality === "hit") {
+    tone(ac, 560 * pitch, 760 * pitch, 0.14, 0, "sine", 0.034);
+    tone(ac, 840 * pitch, 1120 * pitch, 0.14, 0.05, "sine", 0.022);
+  } else if (quality === "core") {
+    if (navigator.vibrate) navigator.vibrate(35);
+    tone(ac, 620 * pitch, 920 * pitch, 0.16, 0, "triangle", 0.045);
+    tone(ac, 930 * pitch, 1320 * pitch, 0.18, 0.06, "sine", 0.034);
+    noiseBurst(ac, 0.035, 0.006, 0.02);
+  } else if (quality === "bullseye") {
+    if (navigator.vibrate) navigator.vibrate(50);
+    tone(ac, 86, 42, 0.16, 0, "sine", 0.05);
+    tone(ac, 620 * pitch, 1320 * pitch, 0.22, 0.025, "triangle", 0.045);
+    tone(ac, 1220 * pitch, 2420 * pitch, 0.26, 0.12, "sine", 0.036);
+    noiseBurst(ac, 0.12, 0.018, 0.015);
   }
 }
 
@@ -159,6 +201,11 @@ function noiseBurst(ac, duration, volume, delay) {
 
 function handleInput(kind) {
   ensureAudio();
+  const mode = game.getHudState().mode;
+  if (mode === "start") {
+    startPlay();
+    return;
+  }
   game.tap(kind);
 }
 
@@ -212,15 +259,16 @@ function draw(state) {
 
 function drawBackground(state) {
   const gradient = ctx.createLinearGradient(0, 0, state.width, state.height);
-  gradient.addColorStop(0, "#05070d");
-  gradient.addColorStop(0.52, "#07111c");
+  const supernovaPulse = state.overdriveActive ? 0.5 + Math.sin(performance.now() * 0.014) * 0.5 : 0;
+  gradient.addColorStop(0, state.overdriveActive ? "#07111b" : "#05070d");
+  gradient.addColorStop(0.52, state.overdriveActive ? "#102018" : "#07111c");
   gradient.addColorStop(1, "#040609");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, state.width, state.height);
 
   const t = performance.now() * 0.00025;
-  drawNebula(state.width * 0.18, state.height * 0.28, state.width * 0.46, `rgba(115,247,255,${0.045 + Math.sin(t) * 0.01})`);
-  drawNebula(state.width * 0.82, state.height * 0.72, state.width * 0.38, `rgba(255,156,72,${0.035 + Math.cos(t * 1.2) * 0.008})`);
+  drawNebula(state.width * 0.18, state.height * 0.28, state.width * 0.46, `rgba(115,247,255,${0.045 + Math.sin(t) * 0.01 + supernovaPulse * 0.035})`);
+  drawNebula(state.width * 0.82, state.height * 0.72, state.width * 0.38, `rgba(255,156,72,${0.035 + Math.cos(t * 1.2) * 0.008 + supernovaPulse * 0.045})`);
   drawNebula(state.width * 0.54, state.height * 0.42, state.width * 0.3, `rgba(151,255,210,${0.026 + Math.sin(t * 1.7) * 0.006})`);
 
   for (const star of state.stars) {
@@ -232,6 +280,9 @@ function drawBackground(state) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+
+  if (state.overdriveActive) drawSpeedLines(state, supernovaPulse);
+  if (state.lowShield) drawDangerVignette(state);
 }
 
 function drawNebula(x, y, radius, color) {
@@ -242,6 +293,45 @@ function drawNebula(x, y, radius, color) {
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fill();
+}
+
+function drawSpeedLines(state, pulse) {
+  ctx.save();
+  const count = 24;
+  const cx = state.currentNode.x;
+  const cy = state.currentNode.y;
+  const time = performance.now() * 0.004;
+  ctx.strokeStyle = `rgba(255,244,177,${0.11 + pulse * 0.08})`;
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = "round";
+  for (let i = 0; i < count; i += 1) {
+    const angle = (i / count) * Math.PI * 2 + time;
+    const inner = 120 + ((time * 22 + i * 17) % 80);
+    const outer = inner + 78;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+    ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawDangerVignette(state) {
+  const alpha = state.lastShield
+    ? 0.28 + Math.sin(performance.now() * 0.009) * 0.08
+    : 0.16;
+  const gradient = ctx.createRadialGradient(
+    state.width / 2,
+    state.height / 2,
+    Math.min(state.width, state.height) * 0.22,
+    state.width / 2,
+    state.height / 2,
+    Math.max(state.width, state.height) * 0.68,
+  );
+  gradient.addColorStop(0, "rgba(0,0,0,0)");
+  gradient.addColorStop(1, `rgba(255,72,82,${alpha})`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, state.width, state.height);
 }
 
 function drawAmbientNodes(state) {
@@ -268,10 +358,39 @@ function drawOrbit(state) {
   glowCircle(
     state.currentNode.x,
     state.currentNode.y,
-    state.nodeRadius,
-    "rgba(115,247,255,0.96)",
-    34,
+    state.nodeRadius * (state.overdriveActive ? 1.18 : 1),
+    state.overdriveActive ? "rgba(255,244,177,0.98)" : "rgba(115,247,255,0.96)",
+    state.overdriveActive ? 54 : 34,
   );
+  if (state.overdriveActive) drawOverdriveCountdown(state);
+}
+
+function drawOverdriveCountdown(state) {
+  const progress = Math.max(
+    0,
+    Math.min(1, state.overdriveRemainingSeconds / 5),
+  );
+  const radius = state.orbitRadius + 24;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(255,244,177,0.22)";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(state.currentNode.x, state.currentNode.y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,244,177,0.92)";
+  ctx.shadowColor = "rgba(255,244,177,0.65)";
+  ctx.shadowBlur = 16;
+  ctx.beginPath();
+  ctx.arc(
+    state.currentNode.x,
+    state.currentNode.y,
+    radius,
+    -Math.PI / 2,
+    -Math.PI / 2 + Math.PI * 2 * progress,
+  );
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawTimingCues(state) {
@@ -431,10 +550,10 @@ function drawTrail(state) {
   for (let i = 1; i < state.trail.length; i += 1) {
     const a = state.trail[i - 1];
     const b = state.trail[i];
-    const alpha = Math.max(0, (state.launchActive ? 0.68 : 0.46) - b.age * 0.5);
+    const alpha = Math.max(0, (state.launchActive ? 0.68 : state.overdriveActive ? 0.58 : 0.46) - b.age * (state.overdriveActive ? 0.34 : 0.5));
     const color = state.overdriveActive ? "255,244,177" : state.launchActive ? "238,247,255" : "151,255,210";
     ctx.strokeStyle = `rgba(${color},${alpha})`;
-    ctx.lineWidth = Math.max(1, (state.launchActive ? 8 : 6) * (1 - i / state.trail.length));
+    ctx.lineWidth = Math.max(1, (state.launchActive ? 8 : state.overdriveActive ? 7.5 : 6) * (1 - i / state.trail.length));
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
@@ -469,14 +588,23 @@ function drawFeedback(state) {
     ctx.fillStyle =
       item.kind === "miss"
         ? "#ff9ab0"
-        : item.kind === "level" || item.kind === "bullseye" || item.kind === "overdrive"
+        : item.kind === "level" || item.kind === "bullseye" || item.kind === "overdrive" || item.kind === "supernova" || item.kind === "clutch"
           ? "#fff4b1"
         : item.kind === "core"
           ? "#ffc96f"
           : item.kind === "bonus" || item.kind === "streak"
             ? "#ffe87e"
           : "#b9ffe1";
-    const size = item.kind === "overdrive" || item.kind === "bullseye" ? 17 : item.kind === "level" ? 15 : 12;
+    const size =
+      item.kind === "supernova" || item.kind === "clutch"
+        ? 30
+        : item.kind === "bullseye"
+          ? 26
+          : item.kind === "overdrive"
+            ? 18
+            : item.kind === "level"
+              ? 15
+              : 12;
     ctx.font = `800 ${size}px Inter, system-ui, sans-serif`;
     ctx.textAlign = "center";
     const labels = {
@@ -487,8 +615,12 @@ function drawFeedback(state) {
       hit: "HIT",
       graze: "GRAZE",
       streak: "STREAK +100",
+      chain: "CHAIN x3",
       bonus: "COMET +150",
-      overdrive: "OVERDRIVE",
+      overdrive: "SUPERNOVA",
+      supernova: "SUPERNOVA",
+      clutch: "CLUTCH SAVE!",
+      danger: "LAST SHIELD",
       catch: "CATCH",
     };
     const label = item.text ?? labels[item.kind] ?? "HIT";
@@ -522,7 +654,7 @@ function drawExplosion(state) {
   const shockRadius = 28 + shock * Math.max(120, state.gravityRadius * (1.2 + power));
   if (power >= 2.6) {
     ctx.save();
-    const flashAlpha = Math.max(0, 0.2 * (1 - explosion.age / 0.18));
+    const flashAlpha = Math.max(0, (power >= 3.5 ? 0.36 : 0.2) * (1 - explosion.age / 0.2));
     ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`;
     ctx.fillRect(0, 0, state.width, state.height);
     ctx.restore();
@@ -601,6 +733,8 @@ function syncUi(hudState, renderState) {
   startScreen.hidden = hudState.mode !== "start";
   endScreen.hidden = hudState.mode !== "ended";
   guidancePanel.hidden = hudState.mode !== "demo";
+  if (secondaryPanel) secondaryPanel.hidden = !hasPlayedRun();
+  if (downloadButton) downloadButton.hidden = !renderState.debug.enabled;
 
   const scoreEl = document.querySelector("#hudScore");
   if (hudState.score !== lastHudScore) {
@@ -610,20 +744,24 @@ function syncUi(hudState, renderState) {
     lastHudScore = hudState.score;
   }
   scoreEl.textContent = String(hudState.score);
-  document.querySelector("#hudCombo").textContent =
+  const comboEl = document.querySelector("#hudCombo");
+  comboEl.textContent =
     `x${hudState.comboMultiplier.toFixed(1)} · ${hudState.streak}`;
+  comboEl.classList.toggle("is-supernova", hudState.overdriveActive);
   document.querySelector("#hudShields").innerHTML = renderShieldIcons(
     hudState.mode === "demo" ? hudState.maxShields : hudState.shields,
     hudState.maxShields,
   );
   document.querySelector("#hudLevel").textContent =
-    hudState.mode === "demo" ? "Demo" : `${hudState.levelIndex + 1}/${hudState.levelCount}`;
+    hudState.mode === "demo" ? "Demo" : `Wave ${hudState.waveNumber}`;
   document.querySelector("#hudProgress").textContent =
     hudState.mode === "demo"
       ? `${hudState.demoHits}/${hudState.demoTargetHits}`
       : `${Math.min(hudState.levelHits + 1, hudState.levelTargetHits)}/${hudState.levelTargetHits}`;
+  const best = loadBest();
+  document.querySelector("#hudBest").textContent = best.score ? String(best.score) : "--";
   const moment = document.querySelector("#hudMoment");
-  moment.textContent = hudState.lastMoment?.text ?? (hudState.mode === "demo" ? "Watch the window" : "");
+  moment.textContent = hudState.lastMoment?.text ?? (hudState.mode === "demo" ? "Watch the window" : hudState.lastShield ? "LAST SHIELD" : "");
   moment.dataset.quality = hudState.lastMoment?.quality ?? "";
 
   updateLevelButtons(hudState.selectedLevelId);
@@ -632,21 +770,23 @@ function syncUi(hudState, renderState) {
 
   if (hudState.mode === "ended" && !endScreenRendered) {
     endScreenRendered = true;
-    const cleared = hudState.endReason === "all-levels-cleared";
-    const strongRun = hudState.bestStreak >= 10;
-    document.querySelector("#endTitle").textContent = cleared
-      ? "Galaxy Cleared"
-      : hudState.endReason === "shields-depleted"
+    const bestResult = saveBest(hudState);
+    const strongRun = bestResult.newBestScore || hudState.bestStreak >= 10;
+    document.querySelector("#endTitle").textContent =
+      hudState.endReason === "shields-depleted"
         ? "Shields Depleted"
         : strongRun
           ? "New Best Streak"
           : "Run Over";
     document.querySelector("#endScore").textContent = String(hudState.score);
-    document.querySelector("#endBestCombo").textContent = `x${hudState.bestComboMultiplier.toFixed(1)} · ${hudState.bestStreak}`;
+    document.querySelector("#endGrade").textContent = gradeForRun(hudState);
+    document.querySelector("#endBestDelta").textContent = bestDeltaText(bestResult.previous.score, hudState.score);
+    document.querySelector("#endBestCombo").textContent = String(hudState.bestStreak);
     document.querySelector("#endBullseyes").textContent = String(hudState.bullseyes);
+    document.querySelector("#endClutchSaves").textContent = String(hudState.clutchSaves);
     document.querySelector("#endAccuracy").textContent = `${hudState.accuracy}%`;
     document.querySelector("#endFurthestLevel").textContent =
-      `${Math.min(hudState.furthestLevelIndex + 1, hudState.levelCount)}/${hudState.levelCount}`;
+      `Wave ${hudState.furthestWaveNumber}`;
   }
 
   const showDebug = renderState.debug.enabled && !["start", "ended"].includes(renderState.mode);
@@ -656,8 +796,11 @@ function syncUi(hudState, renderState) {
       `mode: ${renderState.mode}`,
       `phase: ${renderState.phase?.id ?? "--"}`,
       `level: ${renderState.levelLabel} ${renderState.levelHits}/${renderState.levelTargetHits}`,
+      `wave: ${renderState.waveNumber} loop: ${renderState.loopIndex + 1}`,
       `target: ${renderState.targetColor.label}`,
       `shields: ${renderState.shields}/${renderState.maxShields}`,
+      `clutch saves: ${renderState.clutchSaves}`,
+      `supernova: ${renderState.overdriveRemainingSeconds.toFixed(2)}s`,
       `trial: ${renderState.debug.trialId ?? "--"} (${renderState.debug.trialPhase ?? "--"})`,
       `timing error: ${renderState.debug.timingDifferenceSeconds.toFixed(4)}s`,
       `cue window: ${renderState.timingCue.windowSeconds.toFixed(3)}s`,
@@ -667,6 +810,56 @@ function syncUi(hudState, renderState) {
       `score/streak: ${renderState.score}/${renderState.streak}`,
     ].join("\n");
   }
+}
+
+function loadBest() {
+  try {
+    return {
+      score: 0,
+      streak: 0,
+      furthestWave: 0,
+      bullseyes: 0,
+      ...JSON.parse(localStorage.getItem(bestKey) ?? "{}"),
+    };
+  } catch {
+    return { score: 0, streak: 0, furthestWave: 0, bullseyes: 0 };
+  }
+}
+
+function saveBest(hudState) {
+  const previous = loadBest();
+  const next = {
+    score: Math.max(previous.score, hudState.score),
+    streak: Math.max(previous.streak, hudState.bestStreak),
+    furthestWave: Math.max(previous.furthestWave, hudState.furthestWaveNumber),
+    bullseyes: Math.max(previous.bullseyes, hudState.bullseyes),
+  };
+  localStorage.setItem(bestKey, JSON.stringify(next));
+  localStorage.setItem(runsKey, String(Number(localStorage.getItem(runsKey) ?? "0") + 1));
+  return {
+    previous,
+    next,
+    newBestScore: hudState.score > previous.score,
+  };
+}
+
+function hasPlayedRun() {
+  return Number(localStorage.getItem(runsKey) ?? "0") > 0 || loadBest().score > 0;
+}
+
+function gradeForRun(hudState) {
+  if (hudState.furthestWaveNumber >= 18 || hudState.score >= 50000) return "S Grade";
+  if (hudState.furthestWaveNumber >= 12 || hudState.score >= 26000) return "A Grade";
+  if (hudState.furthestWaveNumber >= 8 || hudState.score >= 12000) return "B Grade";
+  if (hudState.furthestWaveNumber >= 4 || hudState.score >= 4000) return "C Grade";
+  return "D Grade";
+}
+
+function bestDeltaText(previousBest, score) {
+  if (!previousBest) return "First run logged.";
+  if (score > previousBest) return `New best by ${score - previousBest}.`;
+  if (score === previousBest) return "Matched your best.";
+  return `Missed best by ${previousBest - score}.`;
 }
 
 function renderShieldIcons(shields, maxShields) {
@@ -699,9 +892,10 @@ function updateLevelButtons(selectedLevelId) {
 function updateStartNote() {
   const note = document.querySelector("#firstRunNote");
   if (!note) return;
-  note.textContent = localStorage.getItem(demoSeenKey)
-    ? "Choose a level and play."
-    : "First play opens a guided demo, then starts your run.";
+  const best = loadBest();
+  note.textContent = best.score
+    ? `Best: ${best.score} · Furthest: Wave ${best.furthestWave}`
+    : "First run starts on Easy.";
 }
 
 function formatTime(seconds) {
@@ -728,18 +922,13 @@ function downloadSessionData() {
 function startPlay() {
   endScreenRendered = false;
   ensureAudio();
-  if (!localStorage.getItem(demoSeenKey)) {
-    localStorage.setItem(demoSeenKey, "1");
-    game.startDemo(true);
-    return;
-  }
+  if (!hasPlayedRun()) game.setLevel("easy");
   game.startMeasured();
 }
 
 function startDemoOnly() {
   endScreenRendered = false;
   ensureAudio();
-  localStorage.setItem(demoSeenKey, "1");
   game.startDemo(false);
 }
 
@@ -768,6 +957,15 @@ closeHelpButton.addEventListener("click", () => helpDialog.close());
 restartButton.addEventListener("click", () => {
   endScreenRendered = false;
   game.restart();
+  ensureAudio();
+  game.startMeasured();
+});
+harderButton.addEventListener("click", () => {
+  endScreenRendered = false;
+  const current = game.getHudState().selectedLevelId;
+  const next = current === "easy" ? "medium" : "difficult";
+  game.restart();
+  game.setLevel(next);
   ensureAudio();
   game.startMeasured();
 });

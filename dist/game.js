@@ -53,7 +53,10 @@ export class SpaceGlowGame {
     this.bestBoom = 0;
     this.bestComboMultiplier = 1;
     this.bullseyes = 0;
+    this.clutchSaves = 0;
     this.overdriveRemainingSeconds = 0;
+    this.hitFreezeRemaining = 0;
+    this.heartbeatCooldown = 0;
     this.maxShields = SETTINGS.shields.max;
     this.shields = 0;
     this.shieldsDepletedPending = false;
@@ -106,13 +109,25 @@ export class SpaceGlowGame {
   }
 
   currentLevel() {
-    const index = Math.max(0, Math.min(this.levelCursor, LEVELS.length - 1));
+    const index = this.levelIndexWithinLoop();
     return LEVELS[index] ?? LEVELS[0];
+  }
+
+  levelIndexWithinLoop() {
+    return ((this.levelCursor % LEVELS.length) + LEVELS.length) % LEVELS.length;
+  }
+
+  loopIndex() {
+    return Math.max(0, Math.floor(this.levelCursor / LEVELS.length));
+  }
+
+  waveNumber() {
+    return this.levelCursor + 1;
   }
 
   currentRules() {
     if (this.mode === "demo") return DEMO_RULES;
-    return this.currentLevel();
+    return adjustedRulesForLoop(this.currentLevel(), this.loopIndex());
   }
 
   createStars() {
@@ -155,6 +170,12 @@ export class SpaceGlowGame {
     if (delta < 0) {
       this.setMoment("SHIELD LOST", 0, "miss", 0.9);
       this.queueAudio("shieldLost");
+      if (this.shields === SETTINGS.clutch.lastShieldThreshold) {
+        this.setMoment("LAST SHIELD", 0, "danger", 1.1);
+        this.addFeedback("danger", this.currentNode, "LAST SHIELD");
+        this.queueAudio("lastShield");
+        this.heartbeatCooldown = 0;
+      }
     }
     if (this.shields <= 0) this.shieldsDepletedPending = true;
     return delta;
@@ -167,7 +188,7 @@ export class SpaceGlowGame {
       this.queueAudio("shieldGained");
     }
     if (delta > 0 && reason === "level-clear") {
-      this.setMoment(`LEVEL CLEAR +${this.currentLevel().completionBonus}`, this.currentLevel().completionBonus, "level", 1.25);
+      this.setMoment(`LEVEL CLEAR +${this.currentRules().completionBonus}`, this.currentRules().completionBonus, "level", 1.25);
       this.queueAudio("shieldGained");
     }
     return delta;
@@ -191,7 +212,7 @@ export class SpaceGlowGame {
   }
 
   scoreForHit(quality, closeness, nextStreak) {
-    const level = this.currentLevel();
+    const level = this.currentRules();
     const baseByQuality = SETTINGS.scoring.baseByQuality;
     let base = baseByQuality[quality] ?? baseByQuality.graze;
     if (quality === "graze" && level.grazeScoreMultiplier) {
@@ -224,7 +245,10 @@ export class SpaceGlowGame {
     this.bestBoom = 0;
     this.bestComboMultiplier = 1;
     this.bullseyes = 0;
+    this.clutchSaves = 0;
     this.overdriveRemainingSeconds = 0;
+    this.hitFreezeRemaining = 0;
+    this.heartbeatCooldown = 0;
     this.maxShields = SETTINGS.shields.max;
     this.shields = this.maxShields;
     this.shieldsDepletedPending = false;
@@ -256,7 +280,10 @@ export class SpaceGlowGame {
     this.bestBoom = 0;
     this.bestComboMultiplier = 1;
     this.bullseyes = 0;
+    this.clutchSaves = 0;
     this.overdriveRemainingSeconds = 0;
+    this.hitFreezeRemaining = 0;
+    this.heartbeatCooldown = 0;
     this.sessionElapsed = 0;
     this.summary = null;
     this.endReason = null;
@@ -274,7 +301,7 @@ export class SpaceGlowGame {
     this.lastMoment = null;
     this.missGhost = null;
     this.levelBanner = {
-      text: `Level ${this.levelCursor + 1}: ${this.currentLevel().label}`,
+      text: `Level ${this.waveNumber()}: ${this.currentLevel().label}`,
       age: 0,
       life: 0.85,
     };
@@ -304,7 +331,10 @@ export class SpaceGlowGame {
     this.bestBoom = 0;
     this.bestComboMultiplier = 1;
     this.bullseyes = 0;
+    this.clutchSaves = 0;
     this.overdriveRemainingSeconds = 0;
+    this.hitFreezeRemaining = 0;
+    this.heartbeatCooldown = 0;
     this.maxShields = SETTINGS.shields.max;
     this.shields = 0;
     this.shieldsDepletedPending = false;
@@ -364,6 +394,13 @@ export class SpaceGlowGame {
     if (this.overdriveRemainingSeconds > 0) {
       this.overdriveRemainingSeconds = Math.max(0, this.overdriveRemainingSeconds - step);
     }
+    if (this.hitFreezeRemaining > 0) {
+      this.hitFreezeRemaining = Math.max(0, this.hitFreezeRemaining - step);
+      return;
+    }
+    if (this.heartbeatCooldown > 0) {
+      this.heartbeatCooldown = Math.max(0, this.heartbeatCooldown - step);
+    }
     this.updateExplosion(step);
 
     if (this.mode === "levelComplete") {
@@ -379,6 +416,10 @@ export class SpaceGlowGame {
       this.sessionElapsed += step;
       if (this.bonusComet && this.sessionElapsed > this.bonusComet.expiresAt) {
         this.bonusComet.active = false;
+      }
+      if (this.shields === SETTINGS.clutch.lastShieldThreshold && this.heartbeatCooldown <= 0) {
+        this.queueAudio("heartbeat");
+        this.heartbeatCooldown = 1.05;
       }
     }
 
@@ -586,7 +627,7 @@ export class SpaceGlowGame {
         this.addFeedback(quality, this.currentNode);
         this.explosion = createExplosion(this.rng, caughtPoint, this.getTargetColor(), hitPower);
         this.setMoment(`${qualityLabel} +5`, 5, quality);
-        this.queueAudio(audioForHitQuality(quality));
+        this.queueHitAudio(quality);
         this.launch = null;
         if (this.demoHits >= DEMO_RULES.successesToComplete) {
           this.queueAudio("demoComplete");
@@ -598,7 +639,7 @@ export class SpaceGlowGame {
         return;
       }
 
-      const level = this.currentLevel();
+      const level = this.currentRules();
       const nextStreak = this.streak + 1;
       const hitScore = this.scoreForHit(quality, launch.centerCloseness, nextStreak);
       let points = hitScore.points;
@@ -606,8 +647,11 @@ export class SpaceGlowGame {
       if (nextStreak % SETTINGS.scoring.streakBonusEvery === 0) {
         streakBonus = SETTINGS.scoring.streakBonus;
         points += streakBonus;
-        this.addFeedback("streak", caughtPoint, `STREAK +${streakBonus}`);
+        this.addFeedback("streak", caughtPoint, `CHAIN x${nextStreak} +${streakBonus}`);
         this.queueAudio("streakBonus");
+      } else if (nextStreak === 3) {
+        this.addFeedback("chain", caughtPoint, "CHAIN x3");
+        this.queueAudio("chain");
       }
       this.score += points;
       this.streak = nextStreak;
@@ -617,18 +661,42 @@ export class SpaceGlowGame {
         this.comboMultiplierForStreak(Math.max(1, this.streak)),
       );
       this.bestBoom = Math.max(this.bestBoom, points);
-      if (quality === "bullseye") this.bullseyes += 1;
+      if (quality === "bullseye") {
+        this.bullseyes += 1;
+        this.hitFreezeRemaining = 0.08;
+        if (this.overdriveRemainingSeconds > 0) {
+          this.overdriveRemainingSeconds = Math.min(
+            SETTINGS.scoring.overdriveMaxSeconds,
+            this.overdriveRemainingSeconds + 1,
+          );
+          this.addFeedback("supernova", caughtPoint, "+1 SUPERNOVA");
+        }
+      }
       this.levelHits += 1;
-      const shieldGain =
-        quality === "bullseye"
-          ? SETTINGS.shields.bullseyeHitGain
-          : quality === "core"
-            ? SETTINGS.shields.coreHitGain
-            : SETTINGS.shields.normalHitGain;
-      const shieldDelta = this.gainShield(
-        shieldGain,
-        quality === "bullseye" ? "bullseye" : quality === "core" ? "core-hit" : "hit",
-      );
+      const clutchSave =
+        this.shields === SETTINGS.clutch.lastShieldThreshold &&
+        (quality === "core" || quality === "bullseye");
+      let shieldDelta = 0;
+      if (clutchSave) {
+        this.clutchSaves += 1;
+        shieldDelta = this.gainShield(SETTINGS.clutch.saveGain, "clutch-save");
+        this.addFeedback("clutch", caughtPoint, "CLUTCH SAVE!");
+        this.setMoment("CLUTCH SAVE!", 0, "clutch", 1.25);
+        this.startShake(shakeForQuality("clutch"));
+        this.queueAudio("clutchSave");
+        this.heartbeatCooldown = 1.4;
+      } else {
+        const shieldGain =
+          quality === "bullseye"
+            ? SETTINGS.shields.bullseyeHitGain
+            : quality === "core"
+              ? SETTINGS.shields.coreHitGain
+              : SETTINGS.shields.normalHitGain;
+        shieldDelta = this.gainShield(
+          shieldGain,
+          quality === "bullseye" ? "bullseye" : quality === "core" ? "core-hit" : "hit",
+        );
+      }
       const levelComplete = this.levelHits >= level.successesToComplete;
       const explosionPower = levelComplete ? 4 : hitPower;
       this.explosion = createExplosion(this.rng, caughtPoint, this.getTargetColor(), explosionPower);
@@ -644,16 +712,18 @@ export class SpaceGlowGame {
           targetMotionActive: Boolean(this.trial?.targetMotionPlan),
           bonusCometHit: Boolean(launch.bonusAwarded),
           goldTarget: Boolean(this.trial?.goldTarget),
+          clutchSave,
         });
       }
-      this.addFeedback(levelComplete ? "level" : quality, caughtPoint);
-      this.setMoment(`${qualityLabel} +${points}`, points, quality);
-      this.queueAudio(audioForHitQuality(quality));
+      this.addFeedback(levelComplete ? "level" : quality, caughtPoint, levelComplete ? null : `${qualityLabel} +${points}`);
+      if (!clutchSave) this.setMoment(`${qualityLabel} +${points}`, points, quality);
+      this.queueHitAudio(quality);
       if (nextStreak % SETTINGS.scoring.overdriveEvery === 0) {
         this.overdriveRemainingSeconds = SETTINGS.scoring.overdriveSeconds;
-        this.addFeedback("overdrive", caughtPoint, "OVERDRIVE");
-        this.setMoment("OVERDRIVE", 0, "overdrive", 1.1);
-        this.queueAudio("overdriveStart");
+        this.addFeedback("supernova", caughtPoint, "SUPERNOVA x10");
+        this.levelBanner = { text: "SUPERNOVA x10", age: 0, life: 0.95 };
+        this.setMoment("SUPERNOVA x10", 0, "supernova", 1.1);
+        this.queueAudio("supernovaStart");
       }
       this.launch = null;
 
@@ -697,7 +767,7 @@ export class SpaceGlowGame {
   }
 
   completeLevel(point, power = 3) {
-    const level = this.currentLevel();
+    const level = this.currentRules();
     this.score += level.completionBonus;
     this.bestBoom = Math.max(this.bestBoom, level.completionBonus);
     this.gainShield(SETTINGS.shields.levelClearGain, "level-clear");
@@ -712,10 +782,6 @@ export class SpaceGlowGame {
 
   startNextLevel() {
     this.levelCursor += 1;
-    if (this.levelCursor >= LEVELS.length) {
-      this.endSession("all-levels-cleared");
-      return;
-    }
     this.mode = "running";
     this.levelHits = 0;
     this.furthestLevelIndex = Math.max(this.furthestLevelIndex, this.levelCursor);
@@ -726,7 +792,9 @@ export class SpaceGlowGame {
     this.missGhost = null;
     this.bonusComet = null;
     this.levelBanner = {
-      text: `Level ${this.levelCursor + 1}: ${this.currentLevel().label}`,
+      text: this.loopIndex() > 0
+        ? `Wave ${this.waveNumber()}: ${this.currentLevel().label}`
+        : `Level ${this.waveNumber()}: ${this.currentLevel().label}`,
       age: 0,
       life: 0.82,
     };
@@ -744,8 +812,9 @@ export class SpaceGlowGame {
     this.targetNode = clonePoint(target);
     this.targetOriginalPosition = clonePoint(target);
     const targetMotionPlan = this.createTargetMotionPlan(target);
+    const rules = this.currentRules();
     const goldTarget =
-      this.mode === "running" && Boolean(this.currentLevel().goldChance) && this.rng.chance(this.currentLevel().goldChance);
+      this.mode === "running" && Boolean(rules.goldChance) && this.rng.chance(rules.goldChance);
     const bonusComet = this.createBonusComet(target);
     this.bonusComet = bonusComet;
     const volatilityActive =
@@ -766,6 +835,8 @@ export class SpaceGlowGame {
       id: `trial-${++this.trialCounter}`,
       startTime: this.mode === "running" ? this.sessionElapsed : this.demoElapsed,
       phase: this.mode === "running" ? phase.id : "demo",
+      waveNumber: this.mode === "running" ? this.waveNumber() : 0,
+      loopIndex: this.mode === "running" ? this.loopIndex() : 0,
       currentNode: clonePoint(this.currentNode),
       targetNode: clonePoint(target),
       targetOriginalPosition: clonePoint(target),
@@ -782,6 +853,19 @@ export class SpaceGlowGame {
     };
 
     if (this.mode === "running" && this.telemetry) beginTrial(this.telemetry, this.trial);
+
+    if (this.mode === "running" && this.waveNumber() === 1 && this.levelHits < 3) {
+      const prompts = [
+        "Tap in the gold arc.",
+        "Center hits make bigger booms.",
+        "Chain hits for Supernova.",
+      ];
+      this.levelBanner = {
+        text: prompts[this.levelHits],
+        age: 0,
+        life: 1.45,
+      };
+    }
   }
 
   createTargetMotionPlan(target) {
@@ -829,7 +913,7 @@ export class SpaceGlowGame {
   }
 
   createBonusComet(target) {
-    const level = this.currentLevel();
+    const level = this.currentRules();
     const chance = level.bonusCometChance ?? 0;
     if (this.mode !== "running" || chance <= 0 || !this.rng.chance(chance)) return null;
 
@@ -984,6 +1068,12 @@ export class SpaceGlowGame {
     this.audioEvents.push(kind);
   }
 
+  queueHitAudio(quality) {
+    const streak = Math.max(1, this.streak);
+    const supernova = this.overdriveRemainingSeconds > 0 ? 1 : 0;
+    this.queueAudio(`hit:${quality}:${Math.min(40, streak)}:${supernova}`);
+  }
+
   consumeAudioEvents() {
     const events = [...this.audioEvents];
     this.audioEvents.length = 0;
@@ -999,13 +1089,17 @@ export class SpaceGlowGame {
       this.telemetry.summary = this.summary;
       this.telemetry.endReason = reason;
       this.telemetry.finalLevel = this.currentLevel().id;
+      this.telemetry.finalWave = this.waveNumber();
+      this.telemetry.loopIndex = this.loopIndex();
       this.telemetry.finalScore = this.score;
       this.telemetry.finalShields = this.shields;
       this.telemetry.bestBoom = this.bestBoom;
       this.telemetry.bestStreak = this.bestStreak;
       this.telemetry.bestComboMultiplier = this.bestComboMultiplier;
       this.telemetry.bullseyes = this.bullseyes;
+      this.telemetry.clutchSaves = this.clutchSaves;
       this.telemetry.furthestLevelIndex = this.furthestLevelIndex;
+      this.telemetry.furthestWave = this.furthestLevelIndex + 1;
     }
     this.queueAudio("end");
   }
@@ -1022,7 +1116,7 @@ export class SpaceGlowGame {
         Math.floor(demoProgress * (TARGET_STAGES.length - 1)),
       );
     }
-    const level = this.currentLevel();
+    const level = this.currentRules();
     if (!level || level.successesToComplete <= 1) return TARGET_STAGES.length - 1;
     return Math.min(
       TARGET_STAGES.length - 1,
@@ -1071,6 +1165,9 @@ export class SpaceGlowGame {
     const ideal = idealLaunchAngle(this.currentNode, this.targetNode, this.orbitRadius);
     const timingCue = this.getTimingCue(ideal);
     const level = this.currentLevel();
+    const levelRules = this.currentRules();
+    const waveNumber = this.waveNumber();
+    const loopIndex = this.loopIndex();
 
     return {
       appVersion: APP_VERSION,
@@ -1117,21 +1214,29 @@ export class SpaceGlowGame {
       bestBoom: this.bestBoom,
       bestComboMultiplier: this.bestComboMultiplier,
       bullseyes: this.bullseyes,
+      clutchSaves: this.clutchSaves,
       comboMultiplier: this.comboMultiplierForStreak(Math.max(1, this.streak)),
       overdriveActive: this.overdriveRemainingSeconds > 0,
       overdriveRemainingSeconds: this.overdriveRemainingSeconds,
+      overdriveMaxSeconds: SETTINGS.scoring.overdriveMaxSeconds,
       shields: this.shields,
       maxShields: this.maxShields,
       shieldPercent: this.maxShields ? this.shields / this.maxShields : 0,
+      lowShield: this.mode === "running" && this.shields <= SETTINGS.clutch.lowShieldThreshold,
+      lastShield: this.mode === "running" && this.shields <= SETTINGS.clutch.lastShieldThreshold,
       lastMoment: this.lastMoment ? { ...this.lastMoment } : null,
       selectedLevelId: this.selectedLevelId,
       levelId: level.id,
-      levelLabel: level.label,
+      levelLabel: loopIndex > 0 ? `Wave ${waveNumber}` : level.label,
+      baseLevelLabel: level.label,
       levelIndex: this.levelCursor,
+      waveNumber,
+      loopIndex,
       levelCount: LEVELS.length,
       levelHits: this.levelHits,
-      levelTargetHits: level.successesToComplete,
+      levelTargetHits: levelRules.successesToComplete,
       furthestLevelIndex: this.furthestLevelIndex,
+      furthestWaveNumber: this.furthestLevelIndex + 1,
       demoHits: this.demoHits,
       demoTargetHits: DEMO_RULES.successesToComplete,
       targetStage: this.getTargetStage(),
@@ -1148,6 +1253,7 @@ export class SpaceGlowGame {
       missGhost: this.missGhost,
       levelBanner: this.levelBanner ? { ...this.levelBanner } : null,
       screenShake: { ...this.screenShake },
+      hitFreezeRemaining: this.hitFreezeRemaining,
       endReason: this.endReason,
       debug: {
         enabled: this.debug,
@@ -1170,6 +1276,9 @@ export class SpaceGlowGame {
     const hits = finishedTrials.filter((trial) => trial.outcome === "hit").length || this.demoHits;
     const accuracy = totalAttempts ? Math.round((hits / totalAttempts) * 100) : 0;
     const level = this.currentLevel();
+    const levelRules = this.currentRules();
+    const waveNumber = this.waveNumber();
+    const loopIndex = this.loopIndex();
     return {
       mode: this.mode,
       score: this.score,
@@ -1178,22 +1287,30 @@ export class SpaceGlowGame {
       bestBoom: this.bestBoom,
       bestComboMultiplier: this.bestComboMultiplier,
       bullseyes: this.bullseyes,
+      clutchSaves: this.clutchSaves,
       comboMultiplier: this.comboMultiplierForStreak(Math.max(1, this.streak)),
       overdriveActive: this.overdriveRemainingSeconds > 0,
       overdriveRemainingSeconds: this.overdriveRemainingSeconds,
+      overdriveMaxSeconds: SETTINGS.scoring.overdriveMaxSeconds,
       shields: this.shields,
       maxShields: this.maxShields,
       shieldPercent: this.maxShields ? this.shields / this.maxShields : 0,
+      lowShield: this.mode === "running" && this.shields <= SETTINGS.clutch.lowShieldThreshold,
+      lastShield: this.mode === "running" && this.shields <= SETTINGS.clutch.lastShieldThreshold,
       lastMoment: this.lastMoment ? { ...this.lastMoment } : null,
       accuracy,
       selectedLevelId: this.selectedLevelId,
       levelId: level.id,
-      levelLabel: level.label,
+      levelLabel: loopIndex > 0 ? `Wave ${waveNumber}` : level.label,
+      baseLevelLabel: level.label,
       levelIndex: this.levelCursor,
+      waveNumber,
+      loopIndex,
       levelCount: LEVELS.length,
       levelHits: this.levelHits,
-      levelTargetHits: level.successesToComplete,
+      levelTargetHits: levelRules.successesToComplete,
       furthestLevelIndex: this.furthestLevelIndex,
+      furthestWaveNumber: this.furthestLevelIndex + 1,
       demoHits: this.demoHits,
       demoTargetHits: DEMO_RULES.successesToComplete,
       sessionRemaining: Math.max(0, SETTINGS.sessionSeconds - this.sessionElapsed),
@@ -1208,6 +1325,24 @@ export class SpaceGlowGame {
     if (!this.telemetry) return null;
     return this.telemetry;
   }
+}
+
+function adjustedRulesForLoop(level, loopIndex) {
+  if (loopIndex <= 0) return level;
+  const speedScale = SETTINGS.endless.projectileSpeedMultiplierPerLoop ** loopIndex;
+  const periodScale = SETTINGS.endless.orbitPeriodMultiplierPerLoop ** loopIndex;
+  const targetScale = SETTINGS.endless.targetRadiusMultiplierPerLoop ** loopIndex;
+  const gravityScale = SETTINGS.endless.gravityRadiusMultiplierPerLoop ** loopIndex;
+  const bonusScale = SETTINGS.endless.completionBonusMultiplierPerLoop ** loopIndex;
+  return {
+    ...level,
+    label: `Wave ${loopIndex * LEVELS.length + LEVELS.indexOf(level) + 1}`,
+    orbitPeriodSeconds: Math.max(0.72, level.orbitPeriodSeconds * periodScale),
+    projectileSpeed: level.projectileSpeed * speedScale,
+    targetRadius: Math.max(26, level.targetRadius * targetScale),
+    gravityRadius: Math.max(44, level.gravityRadius * gravityScale),
+    completionBonus: Math.round(level.completionBonus * bonusScale),
+  };
 }
 
 const HIT_QUALITY_LABELS = {
@@ -1236,16 +1371,17 @@ function audioForHitQuality(quality) {
 }
 
 function explosionPowerForQuality(quality) {
-  if (quality === "bullseye") return 2.8;
-  if (quality === "core") return 1.8;
+  if (quality === "bullseye") return 3.8;
+  if (quality === "core") return 2;
   if (quality === "hit") return 1;
-  return 0.6;
+  return 0.45;
 }
 
 function shakeForQuality(quality) {
   if (quality === "level") return { duration: 0.22, intensity: 9 };
-  if (quality === "bullseye") return { duration: 0.14, intensity: 6 };
-  if (quality === "core") return { duration: 0.08, intensity: 3.5 };
+  if (quality === "clutch") return { duration: 0.18, intensity: 8 };
+  if (quality === "bullseye") return { duration: 0.14, intensity: 7 };
+  if (quality === "core") return { duration: 0.08, intensity: 4 };
   if (quality === "miss") return { duration: 0.04, intensity: 1.5 };
   return { duration: 0, intensity: 0 };
 }

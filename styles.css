@@ -50,7 +50,7 @@ button {
   left: 50%;
   z-index: 3;
   display: grid;
-  grid-template-columns: minmax(150px, 1.25fr) minmax(104px, 1.18fr) minmax(96px, 1fr) minmax(116px, 1.2fr) minmax(72px, 0.74fr) minmax(72px, 0.74fr);
+  grid-template-columns: minmax(140px, 1.2fr) minmax(104px, 1.18fr) minmax(92px, 1fr) minmax(112px, 1.12fr) minmax(76px, 0.74fr) minmax(72px, 0.72fr) minmax(76px, 0.72fr);
   gap: 8px;
   align-items: center;
   width: min(760px, calc(100vw - 28px));
@@ -121,6 +121,11 @@ button {
   font-size: clamp(1.05rem, 3vw, 1.55rem);
 }
 
+#hudCombo.is-supernova {
+  color: #fff4b1;
+  text-shadow: 0 0 20px rgba(255, 244, 177, 0.52);
+}
+
 #hudShields {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -175,7 +180,8 @@ button {
 .screen[hidden],
 .hud[hidden],
 .debug-panel[hidden],
-.guidance-panel[hidden] {
+.guidance-panel[hidden],
+.secondary-panel[hidden] {
   display: none;
 }
 
@@ -226,6 +232,18 @@ h2 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin: 0 auto 18px;
+}
+
+.secondary-panel {
+  margin: 0 auto 18px;
+}
+
+.panel-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 720;
+  text-transform: uppercase;
 }
 
 .level-button {
@@ -289,6 +307,13 @@ h2 {
   background: linear-gradient(135deg, rgba(115, 247, 255, 0.94), rgba(151, 255, 210, 0.9));
   color: #021016;
   box-shadow: 0 0 32px rgba(115, 247, 255, 0.22);
+}
+
+.tap-button {
+  min-width: min(280px, 78vw);
+  min-height: 64px;
+  font-size: clamp(1.1rem, 4vw, 1.45rem);
+  text-transform: uppercase;
 }
 
 .secondary-button {
@@ -417,6 +442,20 @@ h2 {
   display: block;
 }
 
+.end-grade {
+  margin: 12px 0 0;
+  color: var(--mint);
+  font-size: clamp(1rem, 3vw, 1.25rem);
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.best-delta {
+  margin: 8px 0 0;
+  color: #c7d7e2;
+  font-size: 0.96rem;
+}
+
 #endScreen h1 span {
   margin-bottom: 8px;
   color: var(--muted);
@@ -465,7 +504,7 @@ h2 {
 
   .hud {
     top: max(10px, env(safe-area-inset-top));
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 4px;
     width: min(100vw - 16px, 540px);
     padding: 8px 6px;

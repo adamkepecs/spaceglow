@@ -55,9 +55,22 @@ export const SETTINGS = {
     overdriveMultiplierBonus: 0.5,
     overdriveEvery: 10,
     overdriveSeconds: 5,
+    overdriveMaxSeconds: 8,
     streakBonusEvery: 5,
     streakBonus: 100,
     bonusComet: 150,
+  },
+  clutch: {
+    lowShieldThreshold: 2,
+    lastShieldThreshold: 1,
+    saveGain: 3,
+  },
+  endless: {
+    orbitPeriodMultiplierPerLoop: 0.95,
+    projectileSpeedMultiplierPerLoop: 1.05,
+    targetRadiusMultiplierPerLoop: 0.94,
+    gravityRadiusMultiplierPerLoop: 0.96,
+    completionBonusMultiplierPerLoop: 1.15,
   },
 };
 
